@@ -1,1447 +1,1899 @@
-# PostgreSQL — Complete Database Creation & DDL Reference
-
-> Everything about **creating and defining** databases, schemas, tables, constraints, indexes, views, sequences, and more.
-
----
-
-## Database & Connection
-
-### Create / Drop Database
-
-```sql
-CREATE DATABASE mydb;
-
-CREATE DATABASE mydb
-    OWNER      = myuser
-    ENCODING   = 'UTF8'
-    LC_COLLATE = 'en_US.UTF-8'
-    LC_CTYPE   = 'en_US.UTF-8'
-    TEMPLATE   = template0          -- use template0 when setting encoding/locale
-    CONNECTION LIMIT = 100;         -- max concurrent connections (-1 = unlimited)
-
-DROP DATABASE mydb;
-DROP DATABASE IF EXISTS mydb;
-DROP DATABASE mydb WITH (FORCE);    -- disconnect active sessions first (PG 13+)
-```
-
-### Alter Database
-
-```sql
-ALTER DATABASE mydb RENAME TO newdb;
-ALTER DATABASE mydb OWNER TO newowner;
-ALTER DATABASE mydb CONNECTION LIMIT 200;
-ALTER DATABASE mydb SET search_path TO myschema, public;
-ALTER DATABASE mydb SET timezone TO 'UTC';
-ALTER DATABASE mydb RESET timezone;
-```
-
-### Connect (psql)
-
-```bash
-psql -h localhost -p 5432 -U myuser -d mydb
-psql postgresql://myuser:password@localhost:5432/mydb
-\c mydb          # switch database inside psql
-\l               # list all databases
-\conninfo        # show current connection info
-```
+# 🐘 PostgreSQL — Complete Notes for ML / DL / GenAI / Agentic AI
+> From absolute beginner → job-ready data engineer / AI engineer
 
 ---
 
-## Schemas
+## Table of Contents
 
-Schemas are namespaces inside a database — like folders for tables.
-
-```sql
-CREATE SCHEMA sales;
-CREATE SCHEMA IF NOT EXISTS sales;
-CREATE SCHEMA sales AUTHORIZATION alice;   -- owned by alice
-
-DROP SCHEMA sales;
-DROP SCHEMA sales CASCADE;                 -- also drops everything inside
-DROP SCHEMA IF EXISTS sales CASCADE;
-
-ALTER SCHEMA sales RENAME TO store;
-ALTER SCHEMA sales OWNER TO bob;
-
--- Search path — controls which schemas are searched automatically
-SET search_path TO sales, public;
-SHOW search_path;
-
--- Create table inside a schema
-CREATE TABLE sales.orders (...);
-SELECT * FROM sales.orders;               -- fully qualified name
-```
+1. [Data Types](#1-data-types)
+2. [Primary Keys & Foreign Keys](#2-primary-keys--foreign-keys)
+3. [Constraints](#3-constraints)
+4. [CREATE TABLE](#4-create-table)
+5. [INSERT](#5-insert)
+6. [UPDATE](#6-update)
+7. [DELETE](#7-delete)
+8. [ALTER TABLE](#8-alter-table)
+9. [DROP TABLE](#9-drop-table)
+10. [CHECK Constraint](#10-check-constraint)
+11. [Conditional Expressions & Procedures](#11-conditional-expressions--procedures)
+12. [CASE](#12-case)
+13. [COALESCE](#13-coalesce)
+14. [CAST](#14-cast)
+15. [NULLIF](#15-nullif)
+16. [Views](#16-views)
+17. [Import & Export](#17-import--export)
+18. [Python + PostgreSQL (psycopg2)](#18-python--postgresql-psycopg2)
+19. [PostgreSQL for ML / DL / GenAI / Agentic AI — Real-World Patterns](#19-postgresql-for-ml--dl--genai--agentic-ai--real-world-patterns)
+20. [Job-Ready Cheat Sheet](#20-job-ready-cheat-sheet)
 
 ---
 
-## Data Types
+## 1. Data Types
 
-### Numeric
+Data types define **what kind of data** a column can hold. Choosing the right type saves storage, speeds up queries, and prevents bad data.
 
-| Type | Storage | Range / Notes |
-|------|---------|---------------|
-| `SMALLINT` / `INT2` | 2 bytes | −32,768 to 32,767 |
-| `INTEGER` / `INT` / `INT4` | 4 bytes | −2.1B to 2.1B |
-| `BIGINT` / `INT8` | 8 bytes | −9.2×10¹⁸ to 9.2×10¹⁸ |
-| `DECIMAL(p,s)` / `NUMERIC(p,s)` | variable | exact; p=precision, s=scale |
-| `REAL` / `FLOAT4` | 4 bytes | ~6 decimal digits |
-| `DOUBLE PRECISION` / `FLOAT8` | 8 bytes | ~15 decimal digits |
-| `SMALLSERIAL` | 2 bytes | auto-increment 1–32,767 |
-| `SERIAL` | 4 bytes | auto-increment 1–2.1B |
-| `BIGSERIAL` | 8 bytes | auto-increment 1–9.2×10¹⁸ |
+### Numeric Types
 
-### Character
+| Type | Storage | Range / Use |
+|------|---------|------------|
+| `SMALLINT` | 2 bytes | –32,768 to 32,767 |
+| `INTEGER` / `INT` | 4 bytes | –2.1B to 2.1B (most common) |
+| `BIGINT` | 8 bytes | Very large integers |
+| `SERIAL` | 4 bytes | Auto-incrementing integer (shorthand) |
+| `BIGSERIAL` | 8 bytes | Auto-incrementing big integer |
+| `NUMERIC(p, s)` | Variable | Exact decimal; `p` = precision, `s` = scale |
+| `REAL` | 4 bytes | Floating-point (6 decimal digits) |
+| `DOUBLE PRECISION` | 8 bytes | Floating-point (15 decimal digits) |
 
-| Type | Notes |
-|------|-------|
-| `CHAR(n)` / `CHARACTER(n)` | fixed-length, blank-padded |
-| `VARCHAR(n)` / `CHARACTER VARYING(n)` | variable, max n chars |
-| `TEXT` | unlimited length (preferred in PostgreSQL) |
+```sql
+-- Examples
+salary    NUMERIC(10, 2)   -- up to 99,999,999.99
+score     REAL             -- 0.93847
+model_id  BIGSERIAL        -- auto-incremented ID
+```
 
-### Date & Time
+> **ML note:** Use `NUMERIC` for financial features (no rounding error). Use `REAL` or `DOUBLE PRECISION` for model scores, embeddings dimensions, probabilities.
 
-| Type | Storage | Notes |
-|------|---------|-------|
-| `DATE` | 4 bytes | date only |
-| `TIME` | 8 bytes | time without timezone |
-| `TIME WITH TIME ZONE` | 12 bytes | |
-| `TIMESTAMP` | 8 bytes | date + time, no timezone |
-| `TIMESTAMPTZ` / `TIMESTAMP WITH TIME ZONE` | 8 bytes | **recommended** |
-| `INTERVAL` | 16 bytes | time span |
+---
+
+### Character / Text Types
+
+| Type | Description |
+|------|-------------|
+| `CHAR(n)` | Fixed-length string, padded with spaces |
+| `VARCHAR(n)` | Variable-length string, max `n` characters |
+| `TEXT` | Unlimited length string (most flexible) |
+
+```sql
+username   VARCHAR(50)
+bio        TEXT
+country_code CHAR(2)    -- always 'IN', 'US', etc.
+```
+
+> **GenAI note:** Use `TEXT` for storing prompts, completions, chat history, and document chunks — no length limit.
+
+---
 
 ### Boolean
 
 ```sql
-BOOLEAN   -- TRUE / FALSE / NULL
--- Accepts: true, false, 't', 'f', 'yes', 'no', '1', '0', 'on', 'off'
+is_active   BOOLEAN   -- TRUE, FALSE, NULL
 ```
 
-### Binary & Network
-
-| Type | Notes |
-|------|-------|
-| `BYTEA` | binary data |
-| `INET` | IPv4 or IPv6 host address |
-| `CIDR` | IPv4 or IPv6 network |
-| `MACADDR` | MAC address |
-| `MACADDR8` | EUI-64 MAC address |
-
-### JSON
-
-| Type | Notes |
-|------|-------|
-| `JSON` | stored as text, re-parsed on each use |
-| `JSONB` | stored as binary — **preferred** (indexable, faster queries) |
-
-### Other Useful Types
-
-| Type | Notes |
-|------|-------|
-| `UUID` | 128-bit unique identifier |
-| `XML` | XML data |
-| `MONEY` | currency amount (locale-dependent — use NUMERIC instead) |
-| `POINT` | (x, y) geometric point |
-| `LINE`, `LSEG`, `BOX`, `CIRCLE`, `POLYGON`, `PATH` | geometric shapes |
-| `TSVECTOR` | full-text search document |
-| `TSQUERY` | full-text search query |
-| `ARRAY` | any type can be an array: `int[]`, `text[]` |
-| `HSTORE` | key-value store (requires extension) |
-| `ENUM` | user-defined enumerated type |
-
-### Auto-increment best practice (PG 10+)
-
 ```sql
--- SERIAL is shorthand for SEQUENCE + DEFAULT. Use IDENTITY instead (SQL standard):
-id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY
-id INT    GENERATED ALWAYS AS IDENTITY PRIMARY KEY
-id INT    GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY   -- allows manual INSERT
-id INT    GENERATED ALWAYS AS IDENTITY (START 100 INCREMENT 10)
+SELECT * FROM models WHERE is_deployed = TRUE;
 ```
 
 ---
 
-## CREATE TABLE — Full Syntax
+### Date / Time Types
+
+| Type | Description |
+|------|-------------|
+| `DATE` | Date only (YYYY-MM-DD) |
+| `TIME` | Time only |
+| `TIMESTAMP` | Date + time (no timezone) |
+| `TIMESTAMPTZ` | Date + time **with** timezone (recommended) |
+| `INTERVAL` | Duration (e.g., `'3 days'`) |
 
 ```sql
-CREATE TABLE employees (
-    -- Column definitions
-    id            BIGINT  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    employee_code VARCHAR(10)  NOT NULL UNIQUE,
-    first_name    VARCHAR(100) NOT NULL,
-    last_name     VARCHAR(100) NOT NULL,
-    email         TEXT         NOT NULL,
-    phone         VARCHAR(20),
-    gender        CHAR(1)      CHECK (gender IN ('M', 'F', 'O')),
-    date_of_birth DATE,
-    hired_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    salary        NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (salary >= 0),
-    department_id INT,
-    manager_id    BIGINT,
-    is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
-    metadata      JSONB,
-    tags          TEXT[],
-    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+created_at   TIMESTAMPTZ DEFAULT NOW()
+trained_on   DATE
+duration     INTERVAL
+```
 
-    -- Table-level constraints
-    CONSTRAINT employees_email_unique UNIQUE (email),
-    CONSTRAINT employees_dept_fk
-        FOREIGN KEY (department_id) REFERENCES departments(id)
-        ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT employees_manager_fk
-        FOREIGN KEY (manager_id) REFERENCES employees(id)   -- self-referencing
-        ON DELETE SET NULL,
-    CONSTRAINT employees_name_check
-        CHECK (first_name <> last_name)                     -- cross-column check
+> **ML note:** Always use `TIMESTAMPTZ` for experiment timestamps to avoid timezone bugs across servers.
+
+---
+
+### JSON Types
+
+| Type | Description |
+|------|-------------|
+| `JSON` | Stores raw JSON text |
+| `JSONB` | Binary JSON — **indexed, faster queries** |
+
+```sql
+hyperparams  JSONB   -- {"lr": 0.001, "epochs": 10, "batch": 32}
+metadata     JSONB
+```
+
+```sql
+-- Query inside JSONB
+SELECT * FROM experiments WHERE hyperparams->>'lr' = '0.001';
+SELECT * FROM experiments WHERE hyperparams @> '{"epochs": 10}';
+```
+
+> **Agentic AI note:** `JSONB` is the go-to for storing agent state, tool call results, memory, and structured LLM outputs.
+
+---
+
+### Array Types
+
+```sql
+tags       TEXT[]       -- {'machine-learning', 'nlp'}
+scores     REAL[]       -- {0.91, 0.87, 0.94}
+embedding  VECTOR(1536) -- (with pgvector extension)
+```
+
+```sql
+SELECT * FROM articles WHERE 'nlp' = ANY(tags);
+```
+
+---
+
+### UUID
+
+```sql
+id   UUID DEFAULT gen_random_uuid()
+```
+
+> **Best practice:** Use `UUID` as primary key for distributed systems, APIs, and microservices — avoids ID collision across services.
+
+---
+
+### Special Types
+
+| Type | Use Case |
+|------|----------|
+| `BYTEA` | Raw binary data (images, model weights) |
+| `INET` | IP addresses |
+| `TSVECTOR` | Full-text search |
+| `VECTOR(n)` | pgvector — AI embeddings |
+
+---
+
+## 2. Primary Keys & Foreign Keys
+
+### Primary Key
+
+A **Primary Key (PK)** uniquely identifies each row. Rules:
+- Must be **unique**
+- Cannot be **NULL**
+- Each table should have exactly **one** PK
+
+```sql
+CREATE TABLE users (
+    user_id   SERIAL PRIMARY KEY,
+    username  VARCHAR(50) NOT NULL,
+    email     TEXT UNIQUE NOT NULL
+);
+```
+
+Using UUID as PK (modern approach):
+```sql
+CREATE TABLE sessions (
+    session_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id    INTEGER,
+    started_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+Composite Primary Key (using multiple columns):
+```sql
+CREATE TABLE model_metrics (
+    model_id   INTEGER,
+    epoch      INTEGER,
+    accuracy   REAL,
+    PRIMARY KEY (model_id, epoch)   -- combination must be unique
+);
+```
+
+---
+
+### Foreign Key
+
+A **Foreign Key (FK)** links a column in one table to the PK of another table. Enforces **referential integrity** — you can't have orphan records.
+
+```sql
+CREATE TABLE experiments (
+    exp_id      SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(user_id),
+    model_name  TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+Full FK syntax with actions:
+```sql
+CREATE TABLE predictions (
+    pred_id    SERIAL PRIMARY KEY,
+    exp_id     INTEGER,
+    input_text TEXT,
+    output     TEXT,
+    FOREIGN KEY (exp_id)
+        REFERENCES experiments(exp_id)
+        ON DELETE CASCADE    -- delete predictions if experiment deleted
+        ON UPDATE CASCADE    -- update if experiment id changes
+);
+```
+
+### ON DELETE / ON UPDATE Options
+
+| Option | Behavior |
+|--------|----------|
+| `CASCADE` | Automatically delete/update child rows |
+| `SET NULL` | Set FK column to NULL |
+| `SET DEFAULT` | Set FK column to default value |
+| `RESTRICT` | Prevent deletion if child rows exist |
+| `NO ACTION` | Same as RESTRICT (default) |
+
+---
+
+### Visual: Relationship Diagram
+
+```
+users (user_id PK)
+    │
+    ├──→ experiments (exp_id PK, user_id FK → users)
+    │         │
+    │         └──→ predictions (pred_id PK, exp_id FK → experiments)
+    │
+    └──→ sessions (session_id PK, user_id FK → users)
+```
+
+---
+
+## 3. Constraints
+
+Constraints are **rules** that enforce data integrity at the database level — the last line of defense before bad data enters.
+
+### Types of Constraints
+
+| Constraint | Description |
+|------------|-------------|
+| `NOT NULL` | Column cannot be empty |
+| `UNIQUE` | All values in column must differ |
+| `PRIMARY KEY` | Unique + Not Null (identifier) |
+| `FOREIGN KEY` | References another table's PK |
+| `CHECK` | Custom condition must be true |
+| `DEFAULT` | Default value if none provided |
+
+### Column-Level Constraints
+
+```sql
+CREATE TABLE ml_models (
+    model_id    SERIAL PRIMARY KEY,
+    model_name  VARCHAR(100) NOT NULL,
+    version     VARCHAR(20)  NOT NULL DEFAULT '1.0.0',
+    accuracy    REAL         CHECK (accuracy BETWEEN 0 AND 1),
+    framework   TEXT         CHECK (framework IN ('pytorch', 'tensorflow', 'jax')),
+    created_at  TIMESTAMPTZ  DEFAULT NOW()
+);
+```
+
+### Table-Level Constraints
+
+```sql
+CREATE TABLE ab_tests (
+    test_id    SERIAL,
+    model_a    INTEGER NOT NULL,
+    model_b    INTEGER NOT NULL,
+    start_date DATE,
+    end_date   DATE,
+    PRIMARY KEY (test_id),
+    CHECK (model_a <> model_b),              -- can't A/B test same model
+    CHECK (end_date > start_date)            -- end must be after start
+);
+```
+
+### Adding Constraints to Existing Tables
+
+```sql
+ALTER TABLE ml_models ADD CONSTRAINT chk_version
+    CHECK (version ~ '^\d+\.\d+\.\d+$');    -- semantic version regex
+
+ALTER TABLE users ADD CONSTRAINT uq_email UNIQUE (email);
+```
+
+### Removing Constraints
+
+```sql
+ALTER TABLE ml_models DROP CONSTRAINT chk_version;
+```
+
+---
+
+## 4. CREATE TABLE
+
+`CREATE TABLE` defines a new table's structure — columns, types, and constraints.
+
+### Basic Syntax
+
+```sql
+CREATE TABLE table_name (
+    column1  datatype  constraints,
+    column2  datatype  constraints,
+    ...
+    table_constraints
+);
+```
+
+### Simple Example
+
+```sql
+CREATE TABLE datasets (
+    dataset_id   SERIAL PRIMARY KEY,
+    name         VARCHAR(100) NOT NULL,
+    description  TEXT,
+    rows_count   BIGINT,
+    size_mb      NUMERIC(10, 2),
+    is_public    BOOLEAN DEFAULT TRUE,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Real ML System Example
+
+```sql
+-- Users who train models
+CREATE TABLE data_scientists (
+    ds_id       UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    full_name   VARCHAR(100) NOT NULL,
+    email       TEXT UNIQUE NOT NULL,
+    team        VARCHAR(50),
+    joined_at   DATE DEFAULT CURRENT_DATE
+);
+
+-- ML experiment tracking
+CREATE TABLE experiments (
+    exp_id        SERIAL PRIMARY KEY,
+    ds_id         UUID REFERENCES data_scientists(ds_id) ON DELETE SET NULL,
+    dataset_id    INTEGER REFERENCES datasets(dataset_id),
+    model_type    VARCHAR(50) NOT NULL,
+    hyperparams   JSONB,
+    train_loss    REAL,
+    val_loss      REAL,
+    accuracy      REAL CHECK (accuracy BETWEEN 0.0 AND 1.0),
+    status        VARCHAR(20) DEFAULT 'running'
+                  CHECK (status IN ('running','completed','failed')),
+    started_at    TIMESTAMPTZ DEFAULT NOW(),
+    finished_at   TIMESTAMPTZ
 );
 ```
 
 ### CREATE TABLE IF NOT EXISTS
 
 ```sql
-CREATE TABLE IF NOT EXISTS employees ( ... );
+-- Safe: doesn't throw error if table already exists
+CREATE TABLE IF NOT EXISTS chat_history (
+    id         SERIAL PRIMARY KEY,
+    session_id UUID,
+    role       TEXT CHECK (role IN ('user','assistant','system')),
+    content    TEXT NOT NULL,
+    tokens     INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
-### CREATE TABLE LIKE (copy structure)
+### CREATE TABLE AS (from a query)
 
 ```sql
-CREATE TABLE employees_backup (LIKE employees);
-CREATE TABLE employees_backup (LIKE employees INCLUDING ALL);
--- INCLUDING options: DEFAULTS, CONSTRAINTS, INDEXES, STORAGE, COMMENTS, STATISTICS, ALL
--- EXCLUDING options: same list
-```
-
-### CREATE TABLE AS (copy structure + data)
-
-```sql
-CREATE TABLE employees_backup AS TABLE employees;
-CREATE TABLE employees_backup AS TABLE employees WITH NO DATA;
-CREATE TABLE high_earners AS
-    SELECT * FROM employees WHERE salary > 100000;
+-- Create a new table from query results
+CREATE TABLE top_models AS
+SELECT model_id, model_name, accuracy
+FROM experiments
+WHERE accuracy > 0.95
+ORDER BY accuracy DESC;
 ```
 
 ### Temporary Tables
 
 ```sql
-CREATE TEMP TABLE temp_results (
-    id   INT,
-    name TEXT
+-- Exists only for current session
+CREATE TEMP TABLE batch_predictions (
+    input_id  INTEGER,
+    score     REAL
 );
--- Dropped automatically at end of session (or transaction with ON COMMIT DROP)
-
-CREATE TEMP TABLE t (...) ON COMMIT DELETE ROWS;   -- truncated on commit
-CREATE TEMP TABLE t (...) ON COMMIT DROP;           -- dropped on commit
-CREATE TEMP TABLE t (...) ON COMMIT PRESERVE ROWS;  -- default
-```
-
-### Unlogged Tables (faster, not crash-safe)
-
-```sql
-CREATE UNLOGGED TABLE cache_data (
-    key   TEXT PRIMARY KEY,
-    value JSONB,
-    ttl   TIMESTAMPTZ
-);
--- Not replicated, not WAL-logged — very fast for temporary/cache data
 ```
 
 ---
 
-## Constraints — Complete Reference
+## 5. INSERT
 
-Constraints enforce data integrity rules at the database level.
+`INSERT` adds new rows to a table.
 
-### NOT NULL
+### Basic Syntax
 
 ```sql
--- Column level (inline)
-name VARCHAR(100) NOT NULL
-
--- Cannot be added as a named table-level constraint
--- Add after creation:
-ALTER TABLE employees ALTER COLUMN phone SET NOT NULL;
-ALTER TABLE employees ALTER COLUMN phone DROP NOT NULL;
+INSERT INTO table_name (column1, column2, ...)
+VALUES (value1, value2, ...);
 ```
 
-### DEFAULT
+### Single Row Insert
 
 ```sql
-status      VARCHAR(20) DEFAULT 'active'
-created_at  TIMESTAMPTZ DEFAULT NOW()
-created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-score       NUMERIC     DEFAULT 0.0
-flag        BOOLEAN     DEFAULT FALSE
-tags        TEXT[]      DEFAULT '{}'
-metadata    JSONB       DEFAULT '{}'::jsonb
-counter     INT         DEFAULT nextval('my_sequence')
+INSERT INTO datasets (name, description, rows_count, size_mb, is_public)
+VALUES ('IMDB Reviews', 'Sentiment analysis dataset', 50000, 125.4, TRUE);
 ```
 
-### UNIQUE
+### Multiple Row Insert (Bulk)
 
 ```sql
--- Column level
-email TEXT NOT NULL UNIQUE
-
--- Named column level
-email TEXT NOT NULL CONSTRAINT uq_employee_email UNIQUE
-
--- Table level (single column)
-CONSTRAINT uq_employee_email UNIQUE (email)
-
--- Table level (composite — combination must be unique)
-CONSTRAINT uq_employee_dept UNIQUE (employee_code, department_id)
-
--- Unique with NULLS NOT DISTINCT (PG 15+ — NULLs treated as equal)
-CONSTRAINT uq_phone UNIQUE NULLS NOT DISTINCT (phone)
-
--- Partial unique index (behaves like a partial unique constraint)
-CREATE UNIQUE INDEX uq_active_email ON employees(email) WHERE is_active = TRUE;
--- Only one active employee can have a given email; inactive employees are unconstrained
+INSERT INTO ml_models (model_name, framework, accuracy)
+VALUES
+    ('BERT-base',   'pytorch',     0.923),
+    ('RoBERTa',     'pytorch',     0.941),
+    ('DistilBERT',  'pytorch',     0.911),
+    ('T5-small',    'tensorflow',  0.887);
 ```
 
-### PRIMARY KEY
+### INSERT with RETURNING
 
 ```sql
--- Column level (single column)
-id INT PRIMARY KEY
-
--- Column level with IDENTITY (recommended PG 10+)
-id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY
-
--- Named column level
-id INT CONSTRAINT pk_employees PRIMARY KEY
-
--- Table level (single column)
-CONSTRAINT pk_employees PRIMARY KEY (id)
-
--- Table level (composite primary key)
-CONSTRAINT pk_enrollment PRIMARY KEY (student_id, course_id)
-
--- Natural key
-CONSTRAINT pk_country PRIMARY KEY (country_code)   -- e.g. 'US', 'GB'
+-- Get the generated ID back immediately
+INSERT INTO experiments (ds_id, model_type, hyperparams)
+VALUES (
+    'a1b2c3d4-....',
+    'transformer',
+    '{"lr": 0.0001, "epochs": 20, "batch_size": 32}'::JSONB
+)
+RETURNING exp_id, started_at;
 ```
 
-### FOREIGN KEY
+### INSERT … ON CONFLICT (Upsert)
 
 ```sql
--- Column level (simple)
-department_id INT REFERENCES departments(id)
+-- Insert or update if conflict on unique key
+INSERT INTO model_registry (model_name, version, accuracy)
+VALUES ('GPT-4-mini', '1.2.0', 0.952)
+ON CONFLICT (model_name, version)
+DO UPDATE SET
+    accuracy   = EXCLUDED.accuracy,
+    updated_at = NOW();
 
--- Column level with actions
-department_id INT REFERENCES departments(id)
-    ON DELETE SET NULL
-    ON UPDATE CASCADE
-
--- Named table-level foreign key (preferred — always name constraints)
-CONSTRAINT fk_employee_dept
-    FOREIGN KEY (department_id)
-    REFERENCES departments(id)
-    ON DELETE RESTRICT
-    ON UPDATE CASCADE
-
--- Composite foreign key
-CONSTRAINT fk_order_item
-    FOREIGN KEY (order_id, product_id)
-    REFERENCES order_items(order_id, product_id)
-
--- Deferrable foreign key (checked at COMMIT, not per statement)
-CONSTRAINT fk_employee_dept
-    FOREIGN KEY (department_id)
-    REFERENCES departments(id)
-    DEFERRABLE INITIALLY DEFERRED
-
-DEFERRABLE INITIALLY IMMEDIATE   -- can be deferred manually with SET CONSTRAINTS
-
--- Self-referencing (parent-child, trees)
-CONSTRAINT fk_manager
-    FOREIGN KEY (manager_id)
-    REFERENCES employees(id)
-    ON DELETE SET NULL
+-- Insert or ignore if already exists
+INSERT INTO users (email, username)
+VALUES ('alice@ai.com', 'alice')
+ON CONFLICT (email) DO NOTHING;
 ```
 
-#### ON DELETE / ON UPDATE actions
+> **Agentic AI note:** Upsert is critical for agent memory updates — you don't want duplicate memories, just updates.
 
-| Action | Behaviour |
-|--------|-----------|
-| `RESTRICT` | Error if referenced row exists (checked immediately) |
-| `NO ACTION` | Error if referenced row exists (default; checked at end of statement) |
-| `CASCADE` | Delete/update child rows automatically |
-| `SET NULL` | Set FK column(s) to NULL |
-| `SET DEFAULT` | Set FK column(s) to their DEFAULT value |
-
-### CHECK
+### INSERT from SELECT
 
 ```sql
--- Column level
-salary NUMERIC CHECK (salary >= 0)
-age    INT     CHECK (age BETWEEN 0 AND 150)
-email  TEXT    CHECK (email LIKE '%@%.%')
-status TEXT    CHECK (status IN ('active','inactive','pending','suspended'))
+-- Copy rows from one table into another
+INSERT INTO model_archive (model_id, model_name, accuracy)
+SELECT model_id, model_name, accuracy
+FROM experiments
+WHERE status = 'completed' AND accuracy > 0.90;
+```
 
--- Named column level
-salary NUMERIC CONSTRAINT chk_salary_positive CHECK (salary >= 0)
+---
 
--- Table level (can reference multiple columns)
-CONSTRAINT chk_salary_range
-    CHECK (salary BETWEEN min_salary AND max_salary)
+## 6. UPDATE
 
-CONSTRAINT chk_end_after_start
-    CHECK (end_date IS NULL OR end_date > start_date)
+`UPDATE` modifies existing rows.
 
-CONSTRAINT chk_either_email_or_phone
-    CHECK (email IS NOT NULL OR phone IS NOT NULL)
+### Basic Syntax
 
--- Complex check
-CONSTRAINT chk_discount
-    CHECK (
-        discount_type IN ('percent','fixed')
-        AND (discount_type = 'percent' AND discount_value BETWEEN 0 AND 100
-             OR discount_type = 'fixed'  AND discount_value > 0)
+```sql
+UPDATE table_name
+SET column1 = value1, column2 = value2
+WHERE condition;
+```
+
+> ⚠️ **ALWAYS use WHERE.** Without it, every row gets updated!
+
+### Simple Update
+
+```sql
+UPDATE experiments
+SET status = 'completed', finished_at = NOW()
+WHERE exp_id = 42;
+```
+
+### Update Multiple Columns
+
+```sql
+UPDATE ml_models
+SET
+    accuracy   = 0.967,
+    version    = '2.1.0',
+    updated_at = NOW()
+WHERE model_name = 'BERT-base';
+```
+
+### Update with Calculation
+
+```sql
+UPDATE products
+SET price = price * 1.10     -- 10% price increase
+WHERE category = 'premium';
+```
+
+### Update Using Another Table (JOIN)
+
+```sql
+UPDATE experiments e
+SET accuracy = m.best_accuracy
+FROM model_benchmarks m
+WHERE e.model_type = m.model_type;
+```
+
+### UPDATE with RETURNING
+
+```sql
+UPDATE experiments
+SET status = 'failed'
+WHERE started_at < NOW() - INTERVAL '24 hours'
+  AND status = 'running'
+RETURNING exp_id, model_type, started_at;
+```
+
+### Conditional Update (CASE in SET)
+
+```sql
+UPDATE predictions
+SET confidence_label =
+    CASE
+        WHEN score >= 0.9  THEN 'high'
+        WHEN score >= 0.7  THEN 'medium'
+        ELSE 'low'
+    END;
+```
+
+---
+
+## 7. DELETE
+
+`DELETE` removes rows from a table.
+
+### Basic Syntax
+
+```sql
+DELETE FROM table_name WHERE condition;
+```
+
+> ⚠️ **ALWAYS use WHERE.** `DELETE FROM table;` deletes ALL rows!
+
+### Simple Delete
+
+```sql
+DELETE FROM experiments WHERE status = 'failed';
+```
+
+### Delete with Subquery
+
+```sql
+-- Delete predictions for experiments older than 1 year
+DELETE FROM predictions
+WHERE exp_id IN (
+    SELECT exp_id FROM experiments
+    WHERE created_at < NOW() - INTERVAL '1 year'
+);
+```
+
+### DELETE with RETURNING
+
+```sql
+DELETE FROM chat_history
+WHERE session_id = 'abc-123' AND created_at < NOW() - INTERVAL '30 days'
+RETURNING id, content;
+```
+
+### TRUNCATE (fast delete all rows)
+
+```sql
+TRUNCATE TABLE temp_predictions;               -- delete all, reset identity
+TRUNCATE TABLE temp_predictions RESTART IDENTITY CASCADE;
+```
+
+| Command | Speed | Rollback | Triggers | WHERE clause |
+|---------|-------|----------|----------|--------------|
+| `DELETE` | Slow | Yes | Yes | Yes |
+| `TRUNCATE` | Fast | Yes (in transaction) | No | No |
+
+---
+
+## 8. ALTER TABLE
+
+`ALTER TABLE` modifies an existing table's structure — add columns, change types, rename, etc.
+
+### Add a Column
+
+```sql
+ALTER TABLE experiments
+ADD COLUMN test_accuracy REAL;
+
+ALTER TABLE ml_models
+ADD COLUMN embedding_dim INTEGER DEFAULT 768;
+
+ALTER TABLE chat_history
+ADD COLUMN token_count INTEGER DEFAULT 0;
+```
+
+### Drop a Column
+
+```sql
+ALTER TABLE experiments DROP COLUMN old_metric;
+ALTER TABLE experiments DROP COLUMN IF EXISTS deprecated_field;
+```
+
+### Rename a Column
+
+```sql
+ALTER TABLE experiments RENAME COLUMN val_loss TO validation_loss;
+```
+
+### Change Column Data Type
+
+```sql
+ALTER TABLE experiments
+ALTER COLUMN accuracy TYPE DOUBLE PRECISION;
+
+-- With casting
+ALTER TABLE logs
+ALTER COLUMN event_count TYPE BIGINT USING event_count::BIGINT;
+```
+
+### Set / Drop Default
+
+```sql
+ALTER TABLE ml_models ALTER COLUMN framework SET DEFAULT 'pytorch';
+ALTER TABLE ml_models ALTER COLUMN framework DROP DEFAULT;
+```
+
+### Set / Drop NOT NULL
+
+```sql
+ALTER TABLE experiments ALTER COLUMN model_type SET NOT NULL;
+ALTER TABLE experiments ALTER COLUMN description DROP NOT NULL;
+```
+
+### Rename Table
+
+```sql
+ALTER TABLE experiments RENAME TO ml_experiments;
+```
+
+### Add / Drop Constraints
+
+```sql
+-- Add constraint
+ALTER TABLE ml_models
+ADD CONSTRAINT chk_accuracy CHECK (accuracy BETWEEN 0 AND 1);
+
+-- Drop constraint
+ALTER TABLE ml_models DROP CONSTRAINT chk_accuracy;
+
+-- Add FK
+ALTER TABLE predictions
+ADD CONSTRAINT fk_exp FOREIGN KEY (exp_id) REFERENCES experiments(exp_id);
+```
+
+---
+
+## 9. DROP TABLE
+
+`DROP TABLE` permanently deletes a table and all its data.
+
+### Basic Syntax
+
+```sql
+DROP TABLE table_name;
+DROP TABLE IF EXISTS table_name;            -- safe — no error if not found
+DROP TABLE table_name CASCADE;             -- also drops dependent objects
+DROP TABLE table_name RESTRICT;            -- fail if dependencies exist (default)
+```
+
+### Examples
+
+```sql
+DROP TABLE IF EXISTS temp_results;
+
+DROP TABLE predictions CASCADE;     -- also drops views/FKs pointing to it
+```
+
+> ⚠️ `DROP TABLE` is **irreversible** unless inside a transaction block or you have backups.
+
+### Drop Multiple Tables
+
+```sql
+DROP TABLE IF EXISTS table_a, table_b, table_c;
+```
+
+### Safe Pattern (use transactions)
+
+```sql
+BEGIN;
+DROP TABLE old_experiments;
+-- verify other things look fine...
+COMMIT;   -- or ROLLBACK; if something looks wrong
+```
+
+---
+
+## 10. CHECK Constraint
+
+`CHECK` enforces a custom boolean expression on a column or table. If the expression is `FALSE`, the insert/update is rejected.
+
+### Column-Level CHECK
+
+```sql
+CREATE TABLE model_metrics (
+    model_id  INTEGER,
+    accuracy  REAL CHECK (accuracy BETWEEN 0.0 AND 1.0),
+    f1_score  REAL CHECK (f1_score >= 0),
+    loss      REAL CHECK (loss > 0),
+    split     TEXT CHECK (split IN ('train', 'val', 'test'))
+);
+```
+
+### Named CHECK Constraint
+
+```sql
+CREATE TABLE training_runs (
+    run_id     SERIAL PRIMARY KEY,
+    epochs     INTEGER,
+    batch_size INTEGER,
+    CONSTRAINT chk_epochs     CHECK (epochs > 0 AND epochs <= 10000),
+    CONSTRAINT chk_batch      CHECK (batch_size IN (8, 16, 32, 64, 128, 256)),
+    CONSTRAINT chk_dates      CHECK (end_time > start_time)
+);
+```
+
+### Adding CHECK to Existing Table
+
+```sql
+ALTER TABLE experiments
+ADD CONSTRAINT chk_status
+CHECK (status IN ('queued', 'running', 'completed', 'failed'));
+```
+
+### CHECK with NOT VALID (skip existing rows)
+
+```sql
+-- Add constraint without checking existing rows (safe for large tables)
+ALTER TABLE predictions
+ADD CONSTRAINT chk_score CHECK (score BETWEEN 0 AND 1)
+NOT VALID;
+
+-- Then validate separately
+ALTER TABLE predictions VALIDATE CONSTRAINT chk_score;
+```
+
+---
+
+## 11. Conditional Expressions & Procedures
+
+PostgreSQL has several **conditional expressions** that let you add logic directly inside SQL queries — no Python required.
+
+| Expression | Purpose |
+|------------|---------|
+| `CASE` | If-elif-else logic in SQL |
+| `COALESCE` | Return first non-NULL value |
+| `NULLIF` | Return NULL if two values are equal |
+| `CAST` | Convert data type |
+| `GREATEST` / `LEAST` | Max / min across values |
+
+---
+
+## 12. CASE
+
+`CASE` is SQL's if-else. It returns different values based on conditions.
+
+### Simple CASE (equality checks)
+
+```sql
+SELECT
+    model_name,
+    CASE framework
+        WHEN 'pytorch'     THEN 'PyTorch 🔥'
+        WHEN 'tensorflow'  THEN 'TensorFlow 🌊'
+        WHEN 'jax'         THEN 'JAX ⚡'
+        ELSE 'Unknown'
+    END AS framework_label
+FROM ml_models;
+```
+
+### Searched CASE (range/condition checks)
+
+```sql
+SELECT
+    exp_id,
+    accuracy,
+    CASE
+        WHEN accuracy >= 0.95 THEN 'Excellent'
+        WHEN accuracy >= 0.90 THEN 'Good'
+        WHEN accuracy >= 0.80 THEN 'Acceptable'
+        WHEN accuracy >= 0.70 THEN 'Poor'
+        ELSE 'Failing'
+    END AS performance_grade
+FROM experiments
+WHERE status = 'completed';
+```
+
+### CASE in ORDER BY
+
+```sql
+-- Prioritize 'completed' experiments first
+SELECT * FROM experiments
+ORDER BY
+    CASE status
+        WHEN 'completed' THEN 1
+        WHEN 'running'   THEN 2
+        WHEN 'failed'    THEN 3
+        ELSE 4
+    END;
+```
+
+### CASE in UPDATE
+
+```sql
+UPDATE experiments
+SET priority =
+    CASE
+        WHEN accuracy > 0.95 THEN 'high'
+        WHEN accuracy > 0.85 THEN 'medium'
+        ELSE 'low'
+    END
+WHERE status = 'completed';
+```
+
+### CASE in Aggregation
+
+```sql
+-- Count experiments by performance category
+SELECT
+    COUNT(*) AS total,
+    COUNT(CASE WHEN accuracy >= 0.90 THEN 1 END) AS high_accuracy,
+    COUNT(CASE WHEN accuracy < 0.70  THEN 1 END) AS poor_accuracy,
+    SUM(CASE WHEN framework = 'pytorch' THEN 1 ELSE 0 END) AS pytorch_count
+FROM experiments;
+```
+
+> **ML note:** Use CASE in SELECT for feature engineering directly in SQL — e.g., bucketing continuous values into categorical bins.
+
+---
+
+## 13. COALESCE
+
+`COALESCE(val1, val2, ..., valN)` returns the **first non-NULL value** in the list.
+
+### Basic Usage
+
+```sql
+SELECT
+    model_name,
+    COALESCE(accuracy, val_accuracy, 0.0) AS best_accuracy
+FROM experiments;
+```
+
+### Replacing NULLs with Defaults
+
+```sql
+SELECT
+    exp_id,
+    COALESCE(description, 'No description provided') AS description,
+    COALESCE(tags, ARRAY['untagged'])                  AS tags,
+    COALESCE(finished_at, NOW())                       AS effective_end
+FROM experiments;
+```
+
+### COALESCE in WHERE
+
+```sql
+-- Treat NULL scores as 0 for comparison
+SELECT * FROM predictions
+WHERE COALESCE(score, 0) > 0.5;
+```
+
+### Multiple Fallback Sources
+
+```sql
+-- First try manual_label, then predicted_label, then 'unknown'
+SELECT
+    row_id,
+    COALESCE(manual_label, predicted_label, 'unknown') AS final_label
+FROM dataset_rows;
+```
+
+> **AI note:** Essential when building data pipelines — raw data always has NULLs. Always COALESCE before feeding features to a model.
+
+---
+
+## 14. CAST
+
+`CAST` converts a value from one data type to another.
+
+### Syntax Options
+
+```sql
+CAST(value AS target_type)
+value::target_type          -- PostgreSQL shorthand (preferred)
+```
+
+### Common Conversions
+
+```sql
+-- String to number
+SELECT '42'::INTEGER;
+SELECT '3.14'::REAL;
+SELECT '99.99'::NUMERIC(10,2);
+
+-- Number to string
+SELECT 42::TEXT;
+SELECT 3.14::VARCHAR(10);
+
+-- String to date/time
+SELECT '2024-01-15'::DATE;
+SELECT '2024-01-15 09:30:00'::TIMESTAMP;
+SELECT '2024-01-15 09:30:00+05:30'::TIMESTAMPTZ;
+
+-- To boolean
+SELECT 'true'::BOOLEAN;
+SELECT 1::BOOLEAN;      -- TRUE
+SELECT 0::BOOLEAN;      -- FALSE
+
+-- To JSON
+SELECT '{"key": "value"}'::JSONB;
+
+-- Array to text
+SELECT ARRAY[1,2,3]::TEXT;    -- '{1,2,3}'
+```
+
+### CAST in Queries
+
+```sql
+-- Calculate percentage (integer division pitfall!)
+SELECT
+    correct_predictions,
+    total_predictions,
+    -- Without CAST: integer / integer = integer!
+    correct_predictions / total_predictions                     AS wrong_pct,
+    -- With CAST: float division
+    CAST(correct_predictions AS REAL) / total_predictions       AS accuracy,
+    correct_predictions::REAL / total_predictions               AS accuracy_v2
+FROM model_results;
+```
+
+### CAST for Type Matching
+
+```sql
+-- Comparing text ID to integer FK
+SELECT * FROM experiments
+WHERE exp_id = '42'::INTEGER;
+
+-- Aggregating mixed types
+SELECT AVG(score::NUMERIC) FROM raw_predictions;
+```
+
+### Safe CAST (no error on failure)
+
+```sql
+-- Returns NULL instead of error if cast fails
+SELECT CASE
+    WHEN value ~ '^\d+$' THEN value::INTEGER
+    ELSE NULL
+END AS safe_int
+FROM raw_import;
+```
+
+---
+
+## 15. NULLIF
+
+`NULLIF(val1, val2)` returns `NULL` if `val1 = val2`, otherwise returns `val1`.
+
+Think of it as the **inverse of COALESCE** — it *creates* NULL from a sentinel value.
+
+### Basic Usage
+
+```sql
+SELECT NULLIF(10, 10);    -- returns NULL
+SELECT NULLIF(10, 20);    -- returns 10
+SELECT NULLIF('', '');    -- returns NULL (empty string → NULL)
+```
+
+### Preventing Division by Zero
+
+```sql
+-- Without NULLIF: ERROR: division by zero
+SELECT total_correct / total_predictions FROM results;
+
+-- With NULLIF: returns NULL instead of crashing
+SELECT
+    total_correct * 1.0 / NULLIF(total_predictions, 0) AS accuracy
+FROM results;
+```
+
+### Treating Empty Strings as NULL
+
+```sql
+-- Empty strings from CSV imports treated as real NULL
+SELECT
+    NULLIF(TRIM(model_notes), '')  AS model_notes,
+    NULLIF(error_message, 'N/A')   AS error_message
+FROM experiment_logs;
+```
+
+### NULLIF + COALESCE Combination
+
+```sql
+-- Replace empty/zero values with defaults
+SELECT
+    COALESCE(NULLIF(accuracy, 0), -1)         AS accuracy_or_minus1,
+    COALESCE(NULLIF(TRIM(notes), ''), 'N/A')  AS clean_notes
+FROM experiments;
+```
+
+> **Data pipeline note:** `NULLIF` is essential when importing messy CSVs where missing values come in as `''`, `'N/A'`, `'NULL'`, `0`, etc.
+
+---
+
+## 16. Views
+
+A **View** is a saved SQL query that behaves like a virtual table. It doesn't store data — it runs the underlying query each time you SELECT from it.
+
+### Why Use Views?
+
+- **Simplify** complex queries into reusable names
+- **Security** — expose only specific columns/rows to users
+- **Abstraction** — hide table structure changes from apps
+- **Reporting** — pre-define commonly needed reports
+
+### CREATE VIEW
+
+```sql
+CREATE VIEW view_name AS
+SELECT ...;
+```
+
+### Simple View
+
+```sql
+CREATE VIEW completed_experiments AS
+SELECT
+    e.exp_id,
+    d.full_name AS scientist,
+    e.model_type,
+    e.accuracy,
+    e.finished_at
+FROM experiments e
+JOIN data_scientists d ON e.ds_id = d.ds_id
+WHERE e.status = 'completed'
+ORDER BY e.accuracy DESC;
+
+-- Use it like a table
+SELECT * FROM completed_experiments WHERE accuracy > 0.95;
+```
+
+### View for AI Chat History
+
+```sql
+CREATE VIEW recent_conversations AS
+SELECT
+    session_id,
+    role,
+    content,
+    token_count,
+    created_at,
+    ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at) AS turn_number
+FROM chat_history
+WHERE created_at > NOW() - INTERVAL '7 days';
+```
+
+### CREATE OR REPLACE VIEW
+
+```sql
+CREATE OR REPLACE VIEW model_leaderboard AS
+SELECT
+    model_name,
+    framework,
+    MAX(accuracy)   AS best_accuracy,
+    AVG(accuracy)   AS avg_accuracy,
+    COUNT(*)        AS num_runs
+FROM experiments
+WHERE status = 'completed'
+GROUP BY model_name, framework
+ORDER BY best_accuracy DESC;
+```
+
+### Materialized View (stores results — faster but needs refresh)
+
+```sql
+-- Creates a physical snapshot of the query result
+CREATE MATERIALIZED VIEW mv_model_stats AS
+SELECT
+    model_type,
+    COUNT(*)         AS total_runs,
+    AVG(accuracy)    AS avg_accuracy,
+    MAX(accuracy)    AS best_accuracy
+FROM experiments
+GROUP BY model_type;
+
+-- Refresh when underlying data changes
+REFRESH MATERIALIZED VIEW mv_model_stats;
+
+-- Refresh without locking reads
+REFRESH MATERIALIZED VIEW CONCURRENTLY mv_model_stats;
+```
+
+> **ML note:** Use Materialized Views for pre-computing expensive aggregations (e.g., daily model performance summaries) that you query often.
+
+### Dropping Views
+
+```sql
+DROP VIEW IF EXISTS completed_experiments;
+DROP MATERIALIZED VIEW IF EXISTS mv_model_stats;
+```
+
+---
+
+## 17. Import & Export
+
+### Export (COPY TO)
+
+```sql
+-- Export full table to CSV
+COPY experiments TO '/tmp/experiments.csv' WITH (FORMAT CSV, HEADER TRUE);
+
+-- Export query result to CSV
+COPY (
+    SELECT exp_id, model_type, accuracy
+    FROM experiments
+    WHERE status = 'completed'
+) TO '/tmp/good_experiments.csv' WITH (FORMAT CSV, HEADER TRUE);
+
+-- Export as TSV (tab-separated)
+COPY experiments TO '/tmp/experiments.tsv' WITH (FORMAT CSV, HEADER TRUE, DELIMITER E'\t');
+```
+
+### Import (COPY FROM)
+
+```sql
+-- Import CSV into table (table must exist with matching columns)
+COPY experiments (model_type, accuracy, status)
+FROM '/tmp/new_experiments.csv'
+WITH (FORMAT CSV, HEADER TRUE);
+
+-- Handle NULL values in CSV
+COPY raw_data FROM '/tmp/data.csv'
+WITH (FORMAT CSV, HEADER TRUE, NULL 'NA');
+```
+
+### Using `\copy` in psql (client-side, no superuser needed)
+
+```sql
+\copy experiments TO '~/experiments.csv' CSV HEADER;
+\copy experiments FROM '~/experiments.csv' CSV HEADER;
+```
+
+### Import via Python (pandas + psycopg2)
+
+```python
+import pandas as pd
+from sqlalchemy import create_engine
+
+engine = create_engine('postgresql://user:pass@localhost:5432/mydb')
+
+df = pd.read_csv('experiments.csv')
+df.to_sql('experiments', engine, if_exists='append', index=False)
+
+# Read from DB into DataFrame
+df = pd.read_sql('SELECT * FROM experiments WHERE accuracy > 0.9', engine)
+```
+
+---
+
+## 18. Python + PostgreSQL (psycopg2)
+
+`psycopg2` is the most popular Python library for connecting to PostgreSQL. It's the backbone of ML data pipelines.
+
+### Installation
+
+```bash
+pip install psycopg2-binary
+# or for production (compiled):
+pip install psycopg2
+```
+
+### Basic Connection
+
+```python
+import psycopg2
+
+conn = psycopg2.connect(
+    host     = "localhost",
+    port     = 5432,
+    database = "ml_platform",
+    user     = "postgres",
+    password = "yourpassword"
+)
+
+cursor = conn.cursor()
+```
+
+### Using Environment Variables (best practice)
+
+```python
+import os
+import psycopg2
+
+conn = psycopg2.connect(os.environ['DATABASE_URL'])
+# DATABASE_URL = "postgresql://user:pass@host:5432/dbname"
+```
+
+### SELECT Query
+
+```python
+cursor.execute("SELECT exp_id, model_type, accuracy FROM experiments WHERE accuracy > %s", (0.9,))
+rows = cursor.fetchall()
+
+for row in rows:
+    print(f"ID: {row[0]}, Model: {row[1]}, Accuracy: {row[2]:.4f}")
+
+# Fetch one
+row = cursor.fetchone()
+
+# Fetch as dict (using RealDictCursor)
+from psycopg2.extras import RealDictCursor
+cursor = conn.cursor(cursor_factory=RealDictCursor)
+cursor.execute("SELECT * FROM experiments LIMIT 5")
+rows = cursor.fetchall()   # list of dict-like rows
+print(rows[0]['model_type'])
+```
+
+### INSERT with Parameters
+
+```python
+# ✅ Always use parameterized queries — NEVER f-strings (SQL injection risk!)
+cursor.execute("""
+    INSERT INTO experiments (model_type, hyperparams, accuracy, status)
+    VALUES (%s, %s, %s, %s)
+    RETURNING exp_id
+""", ('transformer', '{"lr": 0.0001}', 0.945, 'completed'))
+
+exp_id = cursor.fetchone()[0]
+conn.commit()
+print(f"Inserted experiment: {exp_id}")
+```
+
+### UPDATE and DELETE
+
+```python
+cursor.execute("""
+    UPDATE experiments
+    SET status = %s, finished_at = NOW()
+    WHERE exp_id = %s
+""", ('completed', 42))
+
+cursor.execute("DELETE FROM predictions WHERE score < %s", (0.1,))
+conn.commit()
+```
+
+### Bulk Insert (executemany)
+
+```python
+records = [
+    ('bert', 0.91, 'completed'),
+    ('gpt2', 0.88, 'completed'),
+    ('t5',   0.93, 'completed'),
+]
+cursor.executemany("""
+    INSERT INTO experiments (model_type, accuracy, status)
+    VALUES (%s, %s, %s)
+""", records)
+conn.commit()
+```
+
+### Bulk Insert (execute_values — much faster)
+
+```python
+from psycopg2.extras import execute_values
+
+records = [(f'model_{i}', 0.85 + i*0.01, 'completed') for i in range(1000)]
+
+execute_values(cursor, """
+    INSERT INTO experiments (model_type, accuracy, status)
+    VALUES %s
+""", records)
+conn.commit()
+```
+
+### Transaction Management
+
+```python
+try:
+    cursor.execute("INSERT INTO experiments ...")
+    cursor.execute("UPDATE model_registry ...")
+    conn.commit()           # all or nothing
+except Exception as e:
+    conn.rollback()         # undo everything on error
+    print(f"Transaction failed: {e}")
+finally:
+    cursor.close()
+    conn.close()
+```
+
+### Context Manager Pattern (recommended)
+
+```python
+with psycopg2.connect(os.environ['DATABASE_URL']) as conn:
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM experiments LIMIT 10")
+        rows = cursor.fetchall()
+# Connection and cursor auto-closed + committed
+```
+
+### Connection Pooling (production)
+
+```python
+from psycopg2 import pool
+
+# Create pool once at app startup
+connection_pool = pool.SimpleConnectionPool(
+    minconn=1,
+    maxconn=20,
+    dsn=os.environ['DATABASE_URL']
+)
+
+def get_conn():
+    return connection_pool.getconn()
+
+def release_conn(conn):
+    connection_pool.putconn(conn)
+```
+
+### JSON / JSONB with psycopg2
+
+```python
+import json
+from psycopg2.extras import Json
+
+hyperparams = {"lr": 0.001, "epochs": 50, "batch_size": 32, "optimizer": "adam"}
+
+cursor.execute("""
+    INSERT INTO experiments (model_type, hyperparams)
+    VALUES (%s, %s)
+""", ('transformer', Json(hyperparams)))
+conn.commit()
+
+# Read back
+cursor.execute("SELECT hyperparams FROM experiments WHERE exp_id = %s", (1,))
+row = cursor.fetchone()
+params = row[0]   # automatically parsed as Python dict
+print(params['lr'])   # 0.001
+```
+
+### Using SQLAlchemy (ORM layer over psycopg2)
+
+```python
+from sqlalchemy import create_engine, text
+import pandas as pd
+
+engine = create_engine('postgresql+psycopg2://user:pass@localhost/mldb')
+
+# Execute raw SQL
+with engine.connect() as conn:
+    result = conn.execute(text("SELECT * FROM experiments WHERE accuracy > :acc"), {"acc": 0.9})
+    rows = result.fetchall()
+
+# Pandas integration
+df = pd.read_sql_query("SELECT * FROM experiments", engine)
+df.to_sql('new_table', engine, if_exists='replace', index=False)
+```
+
+---
+
+## 19. PostgreSQL for ML / DL / GenAI / Agentic AI — Real-World Patterns
+
+### 19.1 Experiment Tracking Database
+
+```sql
+CREATE TABLE experiments (
+    exp_id        UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    project       TEXT NOT NULL,
+    run_name      TEXT,
+    model_arch    TEXT,
+    hyperparams   JSONB NOT NULL DEFAULT '{}',
+    metrics       JSONB DEFAULT '{}',
+    tags          TEXT[] DEFAULT '{}',
+    git_commit    CHAR(40),
+    status        TEXT DEFAULT 'running' CHECK (status IN ('running','done','failed')),
+    started_at    TIMESTAMPTZ DEFAULT NOW(),
+    finished_at   TIMESTAMPTZ,
+    duration_secs REAL GENERATED ALWAYS AS (
+                      EXTRACT(EPOCH FROM (finished_at - started_at))
+                  ) STORED
+);
+
+-- Log metrics per step (loss curves)
+CREATE TABLE metric_logs (
+    log_id   BIGSERIAL PRIMARY KEY,
+    exp_id   UUID REFERENCES experiments(exp_id) ON DELETE CASCADE,
+    step     INTEGER NOT NULL,
+    metric   TEXT NOT NULL,
+    value    DOUBLE PRECISION NOT NULL,
+    logged_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX ON metric_logs (exp_id, metric, step);
+```
+
+```python
+# Log metrics from training loop
+def log_metric(exp_id, step, metric_name, value):
+    cursor.execute("""
+        INSERT INTO metric_logs (exp_id, step, metric, value)
+        VALUES (%s, %s, %s, %s)
+    """, (exp_id, step, metric_name, value))
+    conn.commit()
+
+# Call in training loop
+for epoch, loss, acc in training_results:
+    log_metric(exp_id, epoch, 'train_loss', loss)
+    log_metric(exp_id, epoch, 'val_accuracy', acc)
+```
+
+---
+
+### 19.2 GenAI Chat History Storage
+
+```sql
+CREATE TABLE sessions (
+    session_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id      UUID,
+    model        TEXT DEFAULT 'claude-3-5-sonnet',
+    system_prompt TEXT,
+    metadata     JSONB DEFAULT '{}',
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    last_active  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE messages (
+    msg_id       BIGSERIAL PRIMARY KEY,
+    session_id   UUID REFERENCES sessions(session_id) ON DELETE CASCADE,
+    role         TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+    content      TEXT NOT NULL,
+    tool_calls   JSONB,           -- for function/tool call results
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    latency_ms   INTEGER,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_messages_session ON messages(session_id, created_at);
+```
+
+```python
+def save_message(session_id, role, content, input_tokens=None, output_tokens=None):
+    cursor.execute("""
+        INSERT INTO messages (session_id, role, content, input_tokens, output_tokens)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING msg_id
+    """, (session_id, role, content, input_tokens, output_tokens))
+    conn.commit()
+
+def get_conversation(session_id, last_n=20):
+    cursor.execute("""
+        SELECT role, content FROM messages
+        WHERE session_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+    """, (session_id, last_n))
+    return list(reversed(cursor.fetchall()))
+```
+
+---
+
+### 19.3 Vector Embeddings with pgvector
+
+```bash
+# Install pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+```sql
+CREATE TABLE documents (
+    doc_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title       TEXT,
+    content     TEXT NOT NULL,
+    source_url  TEXT,
+    embedding   VECTOR(1536),       -- OpenAI text-embedding-3-small
+    metadata    JSONB DEFAULT '{}',
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create HNSW index for fast approximate nearest neighbor search
+CREATE INDEX ON documents USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+```
+
+```python
+import openai
+
+def embed_text(text: str) -> list[float]:
+    response = openai.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
     )
+    return response.data[0].embedding
 
--- NOT VALID — add constraint without checking existing rows
-ALTER TABLE employees
-    ADD CONSTRAINT chk_salary_positive CHECK (salary >= 0) NOT VALID;
--- Later validate existing rows separately (less locking):
-ALTER TABLE employees VALIDATE CONSTRAINT chk_salary_positive;
+def store_document(title, content, url):
+    embedding = embed_text(content)
+    cursor.execute("""
+        INSERT INTO documents (title, content, source_url, embedding)
+        VALUES (%s, %s, %s, %s)
+    """, (title, content, url, embedding))
+    conn.commit()
+
+def semantic_search(query: str, top_k: int = 5):
+    query_embedding = embed_text(query)
+    cursor.execute("""
+        SELECT doc_id, title, content,
+               1 - (embedding <=> %s::vector) AS similarity
+        FROM documents
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s
+    """, (query_embedding, query_embedding, top_k))
+    return cursor.fetchall()
 ```
 
-### EXCLUSION Constraint
+> **RAG (Retrieval Augmented Generation) pattern:** Store docs as embeddings in PostgreSQL → retrieve top-k similar chunks → inject into LLM prompt.
 
-Prevents overlapping ranges — powerful for booking/scheduling systems.
+---
+
+### 19.4 Agentic AI — Tool Call & Memory Storage
 
 ```sql
--- Requires btree_gist extension
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-
--- No two bookings for the same room can overlap in time
-CREATE TABLE bookings (
-    id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    room_id  INT NOT NULL,
-    during   TSTZRANGE NOT NULL,
-    CONSTRAINT no_overlap
-        EXCLUDE USING gist (room_id WITH =, during WITH &&)
+-- Agent runs
+CREATE TABLE agent_runs (
+    run_id       UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    agent_name   TEXT NOT NULL,
+    user_goal    TEXT NOT NULL,
+    status       TEXT DEFAULT 'running' CHECK (status IN ('running','success','failed','cancelled')),
+    context      JSONB DEFAULT '{}',
+    started_at   TIMESTAMPTZ DEFAULT NOW(),
+    finished_at  TIMESTAMPTZ,
+    total_steps  INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0
 );
 
--- Prevent overlapping salary ranges per grade
-CREATE TABLE salary_grades (
-    grade     TEXT NOT NULL,
-    sal_range INT4RANGE NOT NULL,
-    CONSTRAINT no_grade_overlap
-        EXCLUDE USING gist (grade WITH =, sal_range WITH &&)
+-- Individual agent steps / tool calls
+CREATE TABLE agent_steps (
+    step_id     BIGSERIAL PRIMARY KEY,
+    run_id      UUID REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+    step_num    INTEGER NOT NULL,
+    step_type   TEXT CHECK (step_type IN ('think','tool_call','tool_result','respond')),
+    tool_name   TEXT,
+    tool_input  JSONB,
+    tool_output JSONB,
+    reasoning   TEXT,
+    tokens_used INTEGER,
+    duration_ms INTEGER,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Long-term agent memory
+CREATE TABLE agent_memory (
+    mem_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    agent_name  TEXT NOT NULL,
+    user_id     UUID,
+    memory_key  TEXT NOT NULL,
+    memory_val  TEXT NOT NULL,
+    embedding   VECTOR(1536),
+    importance  REAL DEFAULT 0.5 CHECK (importance BETWEEN 0 AND 1),
+    access_count INTEGER DEFAULT 0,
+    last_accessed TIMESTAMPTZ DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (agent_name, user_id, memory_key)
 );
 ```
 
-### Generated Columns
+```python
+def log_tool_call(run_id, step_num, tool_name, tool_input, tool_output, duration_ms):
+    cursor.execute("""
+        INSERT INTO agent_steps
+            (run_id, step_num, step_type, tool_name, tool_input, tool_output, duration_ms)
+        VALUES (%s, %s, 'tool_call', %s, %s, %s, %s)
+    """, (run_id, step_num, tool_name,
+          Json(tool_input), Json(tool_output), duration_ms))
+    conn.commit()
 
-Columns whose value is always computed from other columns.
-
-```sql
-CREATE TABLE products (
-    id          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    price       NUMERIC(10,2) NOT NULL,
-    tax_rate    NUMERIC(5,4)  NOT NULL DEFAULT 0.18,
-    price_incl  NUMERIC(10,2) GENERATED ALWAYS AS (price * (1 + tax_rate)) STORED,
-    -- STORED = computed once and stored on disk
-    -- VIRTUAL not yet supported in PostgreSQL (only STORED)
-    first_name  TEXT,
-    last_name   TEXT,
-    full_name   TEXT GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED
-);
+def upsert_memory(agent_name, user_id, key, value):
+    embedding = embed_text(value)
+    cursor.execute("""
+        INSERT INTO agent_memory (agent_name, user_id, memory_key, memory_val, embedding)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (agent_name, user_id, memory_key)
+        DO UPDATE SET
+            memory_val   = EXCLUDED.memory_val,
+            embedding    = EXCLUDED.embedding,
+            last_accessed = NOW(),
+            access_count  = agent_memory.access_count + 1
+    """, (agent_name, user_id, key, value, embedding))
+    conn.commit()
 ```
 
 ---
 
-## ALTER TABLE — Modifying Tables
-
-### Columns
+### 19.5 Feature Store (ML Features)
 
 ```sql
--- Add column
-ALTER TABLE employees ADD COLUMN bio TEXT;
-ALTER TABLE employees ADD COLUMN IF NOT EXISTS bio TEXT;
-ALTER TABLE employees ADD COLUMN score NUMERIC(5,2) DEFAULT 0 NOT NULL;
+CREATE TABLE feature_store (
+    entity_id   TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    feature     TEXT NOT NULL,
+    value       DOUBLE PRECISION,
+    value_str   TEXT,
+    value_json  JSONB,
+    computed_at TIMESTAMPTZ DEFAULT NOW(),
+    valid_from  TIMESTAMPTZ DEFAULT NOW(),
+    valid_to    TIMESTAMPTZ DEFAULT 'infinity',
+    PRIMARY KEY (entity_id, entity_type, feature, valid_from)
+);
 
--- Drop column
-ALTER TABLE employees DROP COLUMN bio;
-ALTER TABLE employees DROP COLUMN IF EXISTS bio;
-ALTER TABLE employees DROP COLUMN bio CASCADE;   -- also drops dependent objects
+-- Latest value view
+CREATE VIEW current_features AS
+SELECT DISTINCT ON (entity_id, entity_type, feature)
+    entity_id, entity_type, feature, value, value_str, value_json, computed_at
+FROM feature_store
+ORDER BY entity_id, entity_type, feature, valid_from DESC;
 
--- Rename column
-ALTER TABLE employees RENAME COLUMN email TO email_address;
+-- Point-in-time lookup (prevents data leakage in training)
+CREATE OR REPLACE FUNCTION get_features_at(
+    p_entity_id TEXT,
+    p_as_of TIMESTAMPTZ
+) RETURNS TABLE (feature TEXT, value DOUBLE PRECISION) AS $$
+    SELECT DISTINCT ON (feature) feature, value
+    FROM feature_store
+    WHERE entity_id = p_entity_id
+      AND valid_from <= p_as_of
+    ORDER BY feature, valid_from DESC;
+$$ LANGUAGE SQL;
+```
 
--- Change type
-ALTER TABLE employees ALTER COLUMN age TYPE BIGINT;
-ALTER TABLE employees ALTER COLUMN code TYPE VARCHAR(20)
-    USING code::VARCHAR(20);                     -- USING for type conversion expression
+---
 
--- Set / drop default
-ALTER TABLE employees ALTER COLUMN status SET DEFAULT 'active';
-ALTER TABLE employees ALTER COLUMN status DROP DEFAULT;
+### 19.6 Model Registry
 
--- Set / drop NOT NULL
-ALTER TABLE employees ALTER COLUMN phone SET NOT NULL;
-ALTER TABLE employees ALTER COLUMN phone DROP NOT NULL;
+```sql
+CREATE TABLE model_registry (
+    model_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    model_name    TEXT NOT NULL,
+    version       TEXT NOT NULL,
+    framework     TEXT,
+    task          TEXT,
+    metrics       JSONB DEFAULT '{}',
+    artifact_path TEXT,       -- s3://bucket/path or /mnt/models/...
+    is_champion   BOOLEAN DEFAULT FALSE,
+    promoted_at   TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (model_name, version)
+);
 
--- Add generated column
-ALTER TABLE employees ADD COLUMN full_name TEXT
-    GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED;
+-- Champion/Challenger pattern
+CREATE VIEW champion_models AS
+SELECT * FROM model_registry
+WHERE is_champion = TRUE;
+```
+
+```python
+def promote_champion(model_name, version):
+    with conn:  # transaction
+        # Demote current champion
+        cursor.execute("""
+            UPDATE model_registry
+            SET is_champion = FALSE
+            WHERE model_name = %s AND is_champion = TRUE
+        """, (model_name,))
+        # Promote new champion
+        cursor.execute("""
+            UPDATE model_registry
+            SET is_champion = TRUE, promoted_at = NOW()
+            WHERE model_name = %s AND version = %s
+        """, (model_name, version))
+```
+
+---
+
+### 19.7 Useful SQL Patterns for ML Engineers
+
+```sql
+-- Training/validation split by hash (reproducible, no leakage)
+SELECT *,
+    CASE
+        WHEN MOD(ABS(hashtext(id::TEXT)), 10) < 8 THEN 'train'
+        WHEN MOD(ABS(hashtext(id::TEXT)), 10) < 9 THEN 'val'
+        ELSE 'test'
+    END AS split
+FROM dataset_rows;
+
+-- Rolling average of loss (window function)
+SELECT
+    step,
+    loss,
+    AVG(loss) OVER (ORDER BY step ROWS BETWEEN 9 PRECEDING AND CURRENT ROW)
+        AS loss_rolling_avg_10
+FROM metric_logs
+WHERE exp_id = 'abc-123' AND metric = 'train_loss'
+ORDER BY step;
+
+-- Compare two model runs side by side
+SELECT
+    a.exp_id   AS exp_a,
+    b.exp_id   AS exp_b,
+    a.accuracy AS acc_a,
+    b.accuracy AS acc_b,
+    b.accuracy - a.accuracy AS delta
+FROM experiments a
+JOIN experiments b ON a.model_type = b.model_type
+WHERE a.exp_id = 'exp-001' AND b.exp_id = 'exp-002';
+
+-- Find best hyperparameter combination
+SELECT
+    hyperparams->>'lr'         AS learning_rate,
+    hyperparams->>'batch_size' AS batch_size,
+    AVG(accuracy)              AS avg_accuracy,
+    STDDEV(accuracy)           AS std_accuracy,
+    COUNT(*)                   AS num_runs
+FROM experiments
+WHERE status = 'completed'
+GROUP BY hyperparams->>'lr', hyperparams->>'batch_size'
+ORDER BY avg_accuracy DESC;
+```
+
+---
+
+## 20. Job-Ready Cheat Sheet
+
+### DDL Quick Reference
+
+```sql
+-- Create
+CREATE TABLE t (id SERIAL PRIMARY KEY, name TEXT NOT NULL, val REAL DEFAULT 0.0);
+CREATE TABLE IF NOT EXISTS t (...);
+CREATE TABLE t2 AS SELECT * FROM t1 WHERE ...;
+CREATE VIEW v AS SELECT ...;
+CREATE MATERIALIZED VIEW mv AS SELECT ...; REFRESH MATERIALIZED VIEW mv;
+
+-- Modify
+ALTER TABLE t ADD COLUMN col TEXT;
+ALTER TABLE t DROP COLUMN col;
+ALTER TABLE t RENAME COLUMN old TO new;
+ALTER TABLE t ALTER COLUMN col TYPE BIGINT USING col::BIGINT;
+ALTER TABLE t ALTER COLUMN col SET DEFAULT 0;
+ALTER TABLE t ALTER COLUMN col SET NOT NULL;
+ALTER TABLE t ADD CONSTRAINT name CHECK (condition);
+ALTER TABLE t DROP CONSTRAINT name;
+ALTER TABLE t RENAME TO new_name;
+
+-- Delete
+DROP TABLE IF EXISTS t CASCADE;
+DROP VIEW IF EXISTS v;
+TRUNCATE TABLE t RESTART IDENTITY;
+```
+
+### DML Quick Reference
+
+```sql
+-- Insert
+INSERT INTO t (col1, col2) VALUES (v1, v2);
+INSERT INTO t (col1, col2) VALUES (v1, v2) RETURNING id;
+INSERT INTO t (col1) VALUES (v1) ON CONFLICT (col1) DO UPDATE SET col1=EXCLUDED.col1;
+INSERT INTO t (col1) VALUES (v1) ON CONFLICT DO NOTHING;
+INSERT INTO t SELECT * FROM t2;
+
+-- Update
+UPDATE t SET col1=v1, col2=v2 WHERE condition;
+UPDATE t SET col1=v1 WHERE id IN (SELECT id FROM t2 WHERE ...);
+UPDATE t SET col1=v1 RETURNING *;
+
+-- Delete
+DELETE FROM t WHERE condition;
+DELETE FROM t WHERE id IN (...) RETURNING *;
+```
+
+### Conditional Expressions
+
+```sql
+CASE WHEN cond1 THEN r1 WHEN cond2 THEN r2 ELSE rn END
+COALESCE(a, b, c)                -- first non-null
+NULLIF(a, b)                     -- null if a=b, else a
+CAST(x AS type) / x::type
+GREATEST(a, b, c) / LEAST(a, b, c)
 ```
 
 ### Constraints
 
 ```sql
--- Add PRIMARY KEY
-ALTER TABLE employees ADD CONSTRAINT pk_employees PRIMARY KEY (id);
-
--- Add UNIQUE
-ALTER TABLE employees ADD CONSTRAINT uq_employee_email UNIQUE (email);
-
--- Add FOREIGN KEY
-ALTER TABLE employees
-    ADD CONSTRAINT fk_employee_dept
-        FOREIGN KEY (department_id) REFERENCES departments(id)
-        ON DELETE SET NULL;
-
--- Add CHECK
-ALTER TABLE employees
-    ADD CONSTRAINT chk_salary CHECK (salary >= 0);
-
--- Drop constraint
-ALTER TABLE employees DROP CONSTRAINT chk_salary;
-ALTER TABLE employees DROP CONSTRAINT IF EXISTS chk_salary;
-
--- Disable / enable trigger (temporarily bypass FK checks — use with care)
-ALTER TABLE employees DISABLE TRIGGER ALL;
-ALTER TABLE employees ENABLE  TRIGGER ALL;
-
--- Rename constraint
-ALTER TABLE employees RENAME CONSTRAINT old_name TO new_name;
-
--- Make constraint deferrable
-ALTER TABLE employees
-    ALTER CONSTRAINT fk_employee_dept DEFERRABLE INITIALLY DEFERRED;
+NOT NULL
+UNIQUE
+PRIMARY KEY                      -- NOT NULL + UNIQUE
+FOREIGN KEY (col) REFERENCES t(col) ON DELETE CASCADE
+CHECK (col > 0)
+DEFAULT value
 ```
 
-### Table options
+### Python psycopg2 Template
 
-```sql
-ALTER TABLE employees RENAME TO staff;
-ALTER TABLE employees SET SCHEMA archive;
-ALTER TABLE employees OWNER TO new_owner;
-ALTER TABLE employees SET LOGGED;        -- convert unlogged → logged
-ALTER TABLE employees SET UNLOGGED;
-ALTER TABLE employees SET (fillfactor = 70);
-ALTER TABLE employees RESET (fillfactor);
+```python
+import psycopg2, os
+from psycopg2.extras import RealDictCursor, Json, execute_values
+
+conn = psycopg2.connect(os.environ['DATABASE_URL'])
+
+with conn:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # SELECT
+        cur.execute("SELECT * FROM t WHERE val > %s", (threshold,))
+        rows = cur.fetchall()
+
+        # INSERT
+        cur.execute("INSERT INTO t (col) VALUES (%s) RETURNING id", (value,))
+        new_id = cur.fetchone()['id']
+
+        # BULK INSERT
+        execute_values(cur, "INSERT INTO t (a, b) VALUES %s", records)
+
+        # JSON
+        cur.execute("INSERT INTO t (data) VALUES (%s)", (Json({'key': 'val'}),))
+
+conn.close()
 ```
 
-### DROP TABLE
+### pgvector Cheat Sheet
 
 ```sql
-DROP TABLE employees;
-DROP TABLE IF EXISTS employees;
-DROP TABLE employees CASCADE;            -- also drops views, FKs referencing this table
-DROP TABLE employees RESTRICT;          -- fails if anything depends on it (default)
-DROP TABLE t1, t2, t3;                  -- multiple tables at once
-```
-
-### TRUNCATE (fast bulk delete)
-
-```sql
-TRUNCATE employees;
-TRUNCATE employees RESTART IDENTITY;     -- reset sequences
-TRUNCATE employees CASCADE;              -- also truncate FK-referencing tables
-TRUNCATE t1, t2, t3;
-```
-
----
-
-## Indexes
-
-Indexes speed up reads at the cost of write overhead and storage.
-
-### CREATE INDEX
-
-```sql
--- Basic B-tree index (default, general purpose)
-CREATE INDEX idx_employees_email ON employees(email);
-CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
-
--- Unique index (also enforces uniqueness)
-CREATE UNIQUE INDEX idx_employees_email ON employees(email);
-
--- Multi-column (composite) index
-CREATE INDEX idx_employees_dept_salary ON employees(department_id, salary DESC);
-
--- Partial index (indexes only matching rows — smaller and faster)
-CREATE INDEX idx_active_email ON employees(email) WHERE is_active = TRUE;
-CREATE INDEX idx_high_salary ON employees(salary) WHERE salary > 100000;
-
--- Index on expression
-CREATE INDEX idx_lower_email ON employees(LOWER(email));
-CREATE INDEX idx_year_hired  ON employees(EXTRACT(YEAR FROM hired_at));
-CREATE INDEX idx_name_concat ON employees((first_name || ' ' || last_name));
-
--- Covering index (INCLUDE — stores extra columns without indexing them)
-CREATE INDEX idx_emp_dept ON employees(department_id) INCLUDE (name, salary);
--- Allows index-only scans for queries selecting name/salary where dept is filtered
-
--- Concurrent build (no table lock — safe for production)
-CREATE INDEX CONCURRENTLY idx_employees_email ON employees(email);
-```
-
-### Index Types
-
-```sql
--- B-tree (default): =, <, >, <=, >=, BETWEEN, IN, LIKE 'prefix%', IS NULL
-CREATE INDEX idx_btree ON employees USING btree (salary);
-
--- Hash: equality only (=) — fast for exact lookups
-CREATE INDEX idx_hash ON employees USING hash (email);
-
--- GIN (Generalised Inverted Index): arrays, JSONB, full-text search, tsvector
-CREATE INDEX idx_gin_tags   ON articles USING gin (tags);       -- array
-CREATE INDEX idx_gin_meta   ON products USING gin (metadata);   -- JSONB
-CREATE INDEX idx_gin_fts    ON articles USING gin (to_tsvector('english', body));
-CREATE INDEX idx_gin_jsonb  ON orders   USING gin (details jsonb_path_ops);  -- leaner
-
--- GiST (Generalised Search Tree): ranges, geometric types, full-text, PostGIS
-CREATE INDEX idx_gist_range ON bookings  USING gist (during);
-CREATE INDEX idx_gist_loc   ON locations USING gist (coordinates);  -- PostGIS point
-CREATE INDEX idx_gist_fts   ON articles  USING gist (to_tsvector('english', body));
-
--- SP-GiST: quad-trees, k-d trees (network addresses, ranges, geometric)
-CREATE INDEX idx_spgist ON ip_log USING spgist (client_ip);
-
--- BRIN (Block Range INdex): very large tables with naturally ordered data
--- Tiny size, fast to build, good for time-series / append-only tables
-CREATE INDEX idx_brin ON measurements USING brin (recorded_at);
-CREATE INDEX idx_brin ON measurements USING brin (recorded_at) WITH (pages_per_range=128);
-```
-
-### Manage Indexes
-
-```sql
-DROP INDEX idx_employees_email;
-DROP INDEX IF EXISTS idx_employees_email;
-DROP INDEX CONCURRENTLY idx_employees_email;   -- no lock
-DROP INDEX idx1, idx2, idx3;
-
-ALTER INDEX idx_employees_email RENAME TO idx_emp_email;
-ALTER INDEX idx_employees_email SET (fillfactor = 80);
-
--- Rebuild (e.g. after heavy deletes/updates)
-REINDEX INDEX idx_employees_email;
-REINDEX TABLE employees;                -- rebuild all indexes on table
-REINDEX DATABASE mydb;
-REINDEX INDEX CONCURRENTLY idx_emp_email;  -- PG 12+
-
--- View indexes
-\d employees           -- psql: shows table with indexes
-SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'employees';
-```
-
----
-
-## Sequences
-
-Sequences generate unique sequential numbers — used by SERIAL and IDENTITY columns.
-
-```sql
--- Create
-CREATE SEQUENCE order_number_seq
-    START WITH 1000
-    INCREMENT BY 1
-    MINVALUE 1
-    MAXVALUE 9999999
-    CYCLE                     -- wrap around to MINVALUE when MAXVALUE reached
-    CACHE 20;                 -- pre-allocate 20 values per session (faster)
-
-CREATE SEQUENCE IF NOT EXISTS order_number_seq;
-
--- Use
-SELECT NEXTVAL('order_number_seq');    -- advance and return next value
-SELECT CURRVAL('order_number_seq');    -- return current value (same session only)
-SELECT LASTVAL();                      -- last value returned by any sequence this session
-SELECT SETVAL('order_number_seq', 500);          -- set current value
-SELECT SETVAL('order_number_seq', 500, false);   -- next call returns 500 (not 501)
-
--- Use as default
-CREATE TABLE orders (
-    order_num INT DEFAULT NEXTVAL('order_number_seq') PRIMARY KEY,
-    ...
-);
-
--- Alter
-ALTER SEQUENCE order_number_seq RESTART WITH 1;
-ALTER SEQUENCE order_number_seq INCREMENT BY 5;
-ALTER SEQUENCE order_number_seq MAXVALUE 99999999;
-ALTER SEQUENCE order_number_seq NO CYCLE;
-ALTER SEQUENCE order_number_seq OWNED BY orders.order_num;   -- drop with table
-
--- Drop
-DROP SEQUENCE order_number_seq;
-DROP SEQUENCE IF EXISTS order_number_seq CASCADE;
-
--- View
-SELECT * FROM information_schema.sequences WHERE sequence_name = 'order_number_seq';
-\ds     -- psql: list sequences
-```
-
----
-
-## Views
-
-Views are named, saved queries — they don't store data (unless materialized).
-
-```sql
--- Basic view
-CREATE VIEW active_employees AS
-    SELECT id, name, email, department_id, salary
-    FROM employees
-    WHERE is_active = TRUE;
-
-CREATE OR REPLACE VIEW active_employees AS
-    SELECT id, name, email, department_id, salary, hired_at
-    FROM employees WHERE is_active = TRUE;
-
--- View with column aliases
-CREATE VIEW dept_summary AS
-    SELECT
-        d.name              AS department,
-        COUNT(e.id)         AS headcount,
-        AVG(e.salary)       AS avg_salary,
-        MAX(e.salary)       AS max_salary
-    FROM departments d
-    LEFT JOIN employees e ON e.department_id = d.id
-    GROUP BY d.id, d.name;
-
--- Updatable view (simple views are automatically updatable)
--- Requirements: single table, no DISTINCT/GROUP BY/HAVING/UNION/aggregates/LIMIT
-CREATE VIEW junior_staff AS
-    SELECT * FROM employees WHERE job_level < 3
-    WITH CHECK OPTION;    -- prevents INSERT/UPDATE that would hide the row from the view
-
--- WITH LOCAL CHECK OPTION vs WITH CASCADED CHECK OPTION
--- LOCAL  = only check this view's WHERE clause
--- CASCADED = check this view and all underlying views (default for WITH CHECK OPTION)
-
--- Recursive view
-CREATE RECURSIVE VIEW org_chart(id, name, manager_id, depth) AS
-    SELECT id, name, manager_id, 0
-    FROM employees WHERE manager_id IS NULL
-    UNION ALL
-    SELECT e.id, e.name, e.manager_id, oc.depth + 1
-    FROM employees e JOIN org_chart oc ON e.manager_id = oc.id;
-
--- Security definer view (runs with view owner's privileges)
-CREATE VIEW sensitive_data
-    WITH (security_barrier = true) AS   -- prevents privilege escalation via WHERE
-    SELECT id, public_info FROM private_table;
-
--- Alter view
-ALTER VIEW active_employees RENAME TO current_employees;
-ALTER VIEW active_employees OWNER TO alice;
-ALTER VIEW active_employees RENAME COLUMN email TO email_address;
-ALTER VIEW active_employees SET (security_barrier = true);
-
--- Drop view
-DROP VIEW active_employees;
-DROP VIEW IF EXISTS active_employees;
-DROP VIEW active_employees CASCADE;
-```
-
-### Materialized Views
-
-Materialized views store the query result physically — fast to read, must be refreshed.
-
-```sql
-CREATE MATERIALIZED VIEW monthly_sales AS
-    SELECT
-        DATE_TRUNC('month', order_date) AS month,
-        SUM(total)                      AS revenue,
-        COUNT(*)                        AS order_count
-    FROM orders
-    GROUP BY 1
-    ORDER BY 1;
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS monthly_sales AS ...;
-
--- With NO DATA (define but don't populate yet)
-CREATE MATERIALIZED VIEW monthly_sales AS (...) WITH NO DATA;
-
--- Refresh (required to reflect changes in underlying tables)
-REFRESH MATERIALIZED VIEW monthly_sales;
-REFRESH MATERIALIZED VIEW CONCURRENTLY monthly_sales;  -- allows concurrent reads
--- CONCURRENTLY requires a unique index on the materialized view:
-CREATE UNIQUE INDEX ON monthly_sales(month);
-
--- Drop
-DROP MATERIALIZED VIEW monthly_sales;
-DROP MATERIALIZED VIEW IF EXISTS monthly_sales CASCADE;
-ALTER MATERIALIZED VIEW monthly_sales RENAME TO quarterly_sales;
-```
-
----
-
-## ENUM Types
-
-```sql
--- Create enum type
-CREATE TYPE mood AS ENUM ('happy', 'sad', 'neutral', 'angry');
-CREATE TYPE order_status AS ENUM ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
-CREATE TYPE priority AS ENUM ('low', 'medium', 'high', 'critical');
-
--- Use in table
-CREATE TABLE tasks (
-    id       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    title    TEXT NOT NULL,
-    status   order_status NOT NULL DEFAULT 'pending',
-    priority priority      NOT NULL DEFAULT 'medium'
-);
-
--- Enum ordering (enums have a natural order from their definition)
-SELECT * FROM tasks WHERE priority > 'medium';   -- 'high' and 'critical'
-ORDER BY priority;   -- orders by declared position
-
--- Alter enum (only add values, cannot remove/rename without recreation)
-ALTER TYPE order_status ADD VALUE 'returned';
-ALTER TYPE order_status ADD VALUE 'on_hold' BEFORE 'processing';
-ALTER TYPE order_status ADD VALUE 'archived' AFTER 'cancelled';
-ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'returned';
-
--- Rename a value (PG 10+)
-ALTER TYPE order_status RENAME VALUE 'shipped' TO 'dispatched';
-
--- Rename the type
-ALTER TYPE order_status RENAME TO shipment_status;
-
--- View enum values
-SELECT enumlabel FROM pg_enum WHERE enumtypid = 'order_status'::regtype ORDER BY enumsortorder;
-
--- Drop (fails if any column uses it)
-DROP TYPE order_status;
-DROP TYPE order_status CASCADE;   -- also changes columns using it
-```
-
----
-
-## Composite Types
-
-```sql
--- Define a reusable row type
-CREATE TYPE address AS (
-    street  TEXT,
-    city    TEXT,
-    state   CHAR(2),
-    zip     VARCHAR(10),
-    country CHAR(2)
-);
-
-CREATE TYPE money_amount AS (
-    amount   NUMERIC(15,2),
-    currency CHAR(3)
-);
-
--- Use in table
-CREATE TABLE customers (
-    id              INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name            TEXT NOT NULL,
-    billing_address address,
-    shipping_address address,
-    balance         money_amount
-);
-
--- Access fields
-SELECT (billing_address).city, (billing_address).state FROM customers;
-SELECT * FROM customers WHERE (billing_address).country = 'US';
-```
-
----
-
-## Domain Types
-
-Domains are data types with constraints — reusable column definitions.
-
-```sql
--- Create domains
-CREATE DOMAIN positive_int AS INT CHECK (VALUE > 0);
-CREATE DOMAIN email_address AS TEXT
-    CHECK (VALUE ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
-CREATE DOMAIN us_zip AS CHAR(5) CHECK (VALUE ~ '^\d{5}$');
-CREATE DOMAIN percentage AS NUMERIC(5,2) CHECK (VALUE BETWEEN 0 AND 100);
-CREATE DOMAIN non_empty_text AS TEXT CHECK (VALUE <> '' AND VALUE IS NOT NULL);
-
--- With default
-CREATE DOMAIN flag AS BOOLEAN NOT NULL DEFAULT FALSE;
-
--- Use in table
-CREATE TABLE products (
-    id       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    price    positive_int NOT NULL,
-    discount percentage,
-    zip_code us_zip
-);
-
--- Alter domain
-ALTER DOMAIN positive_int ADD CONSTRAINT max_val CHECK (VALUE < 1000000);
-ALTER DOMAIN positive_int DROP CONSTRAINT max_val;
-ALTER DOMAIN positive_int SET DEFAULT 1;
-ALTER DOMAIN positive_int DROP DEFAULT;
-ALTER DOMAIN positive_int SET NOT NULL;
-ALTER DOMAIN positive_int DROP NOT NULL;
-ALTER DOMAIN positive_int RENAME TO positive_integer;
-ALTER DOMAIN positive_int OWNER TO alice;
-
--- Drop
-DROP DOMAIN positive_int;
-DROP DOMAIN IF EXISTS positive_int CASCADE;
-```
-
----
-
-## Triggers
-
-Triggers run a function automatically before/after DML events.
-
-### Step 1: Create trigger function
-
-```sql
--- Trigger functions return TRIGGER (special type)
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;    -- return modified row (for BEFORE triggers)
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION log_employee_changes()
-RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
-    IF TG_OP = 'DELETE' THEN
-        INSERT INTO employee_audit(employee_id, action, changed_at, old_data)
-        VALUES (OLD.id, 'DELETE', NOW(), row_to_json(OLD));
-        RETURN OLD;
-    ELSIF TG_OP = 'UPDATE' THEN
-        INSERT INTO employee_audit(employee_id, action, changed_at, old_data, new_data)
-        VALUES (OLD.id, 'UPDATE', NOW(), row_to_json(OLD), row_to_json(NEW));
-        RETURN NEW;
-    ELSIF TG_OP = 'INSERT' THEN
-        INSERT INTO employee_audit(employee_id, action, changed_at, new_data)
-        VALUES (NEW.id, 'INSERT', NOW(), row_to_json(NEW));
-        RETURN NEW;
-    END IF;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION prevent_salary_decrease()
-RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
-    IF NEW.salary < OLD.salary THEN
-        RAISE EXCEPTION 'Salary cannot be decreased. Old: %, New: %', OLD.salary, NEW.salary;
-    END IF;
-    RETURN NEW;
-END;
-$$;
-```
-
-### Step 2: Create trigger
-
-```sql
--- BEFORE trigger — can modify NEW, abort with RETURN NULL
-CREATE TRIGGER trg_set_updated_at
-    BEFORE INSERT OR UPDATE ON employees
-    FOR EACH ROW
-    EXECUTE FUNCTION set_updated_at();
-
--- AFTER trigger — used for audit, side effects (cannot modify the row)
-CREATE TRIGGER trg_audit_employees
-    AFTER INSERT OR UPDATE OR DELETE ON employees
-    FOR EACH ROW
-    EXECUTE FUNCTION log_employee_changes();
-
--- WITH CONDITION (WHEN clause — only fire when true)
-CREATE TRIGGER trg_prevent_salary_decrease
-    BEFORE UPDATE OF salary ON employees
-    FOR EACH ROW
-    WHEN (OLD.salary IS NOT NULL)
-    EXECUTE FUNCTION prevent_salary_decrease();
-
--- Statement-level trigger (fires once per statement, not per row)
-CREATE TRIGGER trg_after_bulk_update
-    AFTER UPDATE ON employees
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION log_bulk_operation();
-
--- INSTEAD OF trigger (for views — makes them updatable)
-CREATE TRIGGER trg_update_view
-    INSTEAD OF UPDATE ON active_employees_view
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_view_update();
-
--- Transition tables (AFTER statement-level, access changed rows)
-CREATE TRIGGER trg_bulk_salary_audit
-    AFTER UPDATE ON employees
-    REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION audit_bulk_salary();
-
--- Manage triggers
-ALTER TRIGGER trg_set_updated_at ON employees RENAME TO trg_auto_updated_at;
-ALTER TABLE employees DISABLE TRIGGER trg_audit_employees;
-ALTER TABLE employees ENABLE  TRIGGER trg_audit_employees;
-ALTER TABLE employees DISABLE TRIGGER ALL;
-ALTER TABLE employees ENABLE  TRIGGER ALL;
-DROP TRIGGER trg_set_updated_at ON employees;
-DROP TRIGGER IF EXISTS trg_set_updated_at ON employees;
-```
-
----
-
-## Rules & Row Security Policies
-
-### Row-Level Security (RLS)
-
-Control which rows users can see or modify.
-
-```sql
--- Enable RLS on table
-ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE employees FORCE ROW LEVEL SECURITY;  -- applies to table owner too
-
--- Policy: each user sees only their own row
-CREATE POLICY employees_self
-    ON employees
-    FOR ALL                   -- INSERT, SELECT, UPDATE, DELETE (or specific)
-    USING (user_id = current_user_id());   -- filter for SELECT/UPDATE/DELETE
-
--- Policy: managers see their department
-CREATE POLICY manager_dept_policy
-    ON employees
-    FOR SELECT
-    TO manager_role                        -- applies to this role
-    USING (department_id IN (
-        SELECT department_id FROM managers WHERE user_id = current_user_id()
-    ));
-
--- WITH CHECK — additional check for INSERT/UPDATE
-CREATE POLICY insert_own_dept
-    ON employees
-    FOR INSERT
-    WITH CHECK (department_id = get_user_dept());
-
--- Drop / alter
-DROP POLICY employees_self ON employees;
-ALTER POLICY employees_self ON employees RENAME TO my_self_policy;
-ALTER POLICY employees_self ON employees USING (...) WITH CHECK (...);
-
--- Disable
-ALTER TABLE employees DISABLE ROW LEVEL SECURITY;
-```
-
----
-
-## Partitioning
-
-Split a large table into smaller physical partitions (PG 10+).
-
-### Range Partitioning
-
-```sql
-CREATE TABLE measurements (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY,
-    sensor_id   INT NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL,
-    value       NUMERIC
-) PARTITION BY RANGE (recorded_at);
-
--- Create partitions
-CREATE TABLE measurements_2023 PARTITION OF measurements
-    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');
-
-CREATE TABLE measurements_2024 PARTITION OF measurements
-    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
-
--- Default partition (catches everything else)
-CREATE TABLE measurements_default PARTITION OF measurements DEFAULT;
-```
-
-### List Partitioning
-
-```sql
-CREATE TABLE orders (
-    id     BIGINT GENERATED ALWAYS AS IDENTITY,
-    region TEXT NOT NULL,
-    total  NUMERIC
-) PARTITION BY LIST (region);
-
-CREATE TABLE orders_us PARTITION OF orders FOR VALUES IN ('US', 'CA', 'MX');
-CREATE TABLE orders_eu PARTITION OF orders FOR VALUES IN ('DE', 'FR', 'GB', 'IT');
-CREATE TABLE orders_other PARTITION OF orders DEFAULT;
-```
-
-### Hash Partitioning
-
-```sql
-CREATE TABLE users (
-    id   BIGINT GENERATED ALWAYS AS IDENTITY,
-    name TEXT
-) PARTITION BY HASH (id);
-
-CREATE TABLE users_p0 PARTITION OF users FOR VALUES WITH (MODULUS 4, REMAINDER 0);
-CREATE TABLE users_p1 PARTITION OF users FOR VALUES WITH (MODULUS 4, REMAINDER 1);
-CREATE TABLE users_p2 PARTITION OF users FOR VALUES WITH (MODULUS 4, REMAINDER 2);
-CREATE TABLE users_p3 PARTITION OF users FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-```
-
-### Sub-partitioning
-
-```sql
--- Partition by range, then sub-partition by list
-CREATE TABLE sales PARTITION BY RANGE (sale_date);
-CREATE TABLE sales_2024 PARTITION OF sales
-    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01')
-    PARTITION BY LIST (region);
-CREATE TABLE sales_2024_us PARTITION OF sales_2024 FOR VALUES IN ('US');
-```
-
-### Partition management
-
-```sql
--- Attach existing table as partition
-ALTER TABLE measurements ATTACH PARTITION old_data
-    FOR VALUES FROM ('2020-01-01') TO ('2021-01-01');
-
--- Detach (becomes standalone table)
-ALTER TABLE measurements DETACH PARTITION measurements_2023;
-ALTER TABLE measurements DETACH PARTITION measurements_2023 CONCURRENTLY;  -- PG 14+
-
--- Indexes on partitioned tables (auto-propagate to partitions)
-CREATE INDEX ON measurements (sensor_id, recorded_at);
-
--- Check partition info
-SELECT inhrelid::regclass AS partition, inhparent::regclass AS parent
-FROM pg_inherits
-WHERE inhparent = 'measurements'::regclass;
-```
-
----
-
-## Extensions
-
-```sql
--- Enable
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";      -- UUID generation
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";        -- cryptographic functions
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";         -- trigram similarity / LIKE indexing
-CREATE EXTENSION IF NOT EXISTS "fuzzystrmatch";   -- levenshtein, soundex, metaphone
-CREATE EXTENSION IF NOT EXISTS "hstore";          -- key-value store column type
-CREATE EXTENSION IF NOT EXISTS "btree_gist";      -- GiST index for scalar types (exclusion constraints)
-CREATE EXTENSION IF NOT EXISTS "btree_gin";       -- GIN index for scalar types
-CREATE EXTENSION IF NOT EXISTS "citext";          -- case-insensitive text type
-CREATE EXTENSION IF NOT EXISTS "intarray";        -- integer array extra operators
-CREATE EXTENSION IF NOT EXISTS "tablefunc";       -- crosstab (pivot)
-CREATE EXTENSION IF NOT EXISTS "postgis";         -- geographic objects
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements"; -- query performance statistics
-CREATE EXTENSION IF NOT EXISTS "unaccent";        -- remove diacritical marks
-
--- In a specific schema
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA extensions;
-
--- View installed
-SELECT * FROM pg_extension;
-\dx   -- psql
-
--- Drop
-DROP EXTENSION IF EXISTS "uuid-ossp";
-DROP EXTENSION "uuid-ossp" CASCADE;
-```
-
----
-
-## Roles & Permissions
-
-### Roles (users and groups)
-
-```sql
--- Create role (login = user)
-CREATE ROLE alice LOGIN PASSWORD 'secret123';
-CREATE ROLE alice LOGIN PASSWORD 'secret123' VALID UNTIL '2025-12-31';
-CREATE ROLE alice SUPERUSER LOGIN PASSWORD 'secret';   -- full access
-CREATE ROLE alice CREATEDB LOGIN PASSWORD 'secret';
-CREATE ROLE alice CREATEROLE LOGIN PASSWORD 'secret';
-
--- Group role (no login)
-CREATE ROLE developers;
-CREATE ROLE readonly_group;
-
--- Grant role membership
-GRANT developers TO alice;
-GRANT developers TO alice, bob, carol;
-REVOKE developers FROM alice;
-
--- Alter
-ALTER ROLE alice PASSWORD 'newpassword';
-ALTER ROLE alice VALID UNTIL 'infinity';
-ALTER ROLE alice CREATEDB;
-ALTER ROLE alice NOCREATEDB;
-ALTER ROLE alice RENAME TO alicia;
-ALTER ROLE alice CONNECTION LIMIT 10;
-ALTER ROLE alice SET search_path TO myschema;
-
--- Drop
-DROP ROLE alice;
-DROP ROLE IF EXISTS alice;
-```
-
-### Privileges (GRANT / REVOKE)
-
-```sql
--- Database
-GRANT CONNECT ON DATABASE mydb TO alice;
-GRANT CREATE  ON DATABASE mydb TO developers;
-
--- Schema
-GRANT USAGE  ON SCHEMA public TO readonly_group;
-GRANT CREATE ON SCHEMA public TO developers;
-GRANT ALL    ON SCHEMA sales  TO alice;
-
--- Table
-GRANT SELECT          ON employees TO readonly_group;
-GRANT SELECT, INSERT  ON employees TO alice;
-GRANT ALL PRIVILEGES  ON employees TO alice;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly_group;
+-- Setup
+CREATE EXTENSION vector;
 
 -- Column
-GRANT SELECT (name, email) ON employees TO alice;   -- only specific columns
+embedding VECTOR(1536)
 
--- Sequence
-GRANT USAGE, SELECT ON SEQUENCE employee_id_seq TO alice;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO alice;
+-- Distance operators
+<=>   -- cosine distance (most common for text)
+<->   -- L2 (Euclidean) distance
+<#>   -- negative inner product
 
--- Function
-GRANT EXECUTE ON FUNCTION get_salary(int) TO alice;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO alice;
+-- Index
+CREATE INDEX ON docs USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX ON docs USING ivfflat (embedding vector_l2_ops) WITH (lists=100);
 
--- Default privileges (for future objects)
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT SELECT ON TABLES TO readonly_group;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL ON TABLES TO developers;
-
--- Revoke
-REVOKE SELECT ON employees FROM alice;
-REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM alice;
-REVOKE CONNECT ON DATABASE mydb FROM PUBLIC;   -- PUBLIC = everyone
-
--- WITH GRANT OPTION (allow recipient to further grant)
-GRANT SELECT ON employees TO alice WITH GRANT OPTION;
+-- Query
+SELECT id, 1-(embedding <=> '[...]'::vector) AS sim
+FROM docs ORDER BY embedding <=> '[...]'::vector LIMIT 10;
 ```
+
+### Key Best Practices
+
+| Practice | Why |
+|----------|-----|
+| Always use parameterized queries (`%s`) | Prevent SQL injection |
+| Use `TIMESTAMPTZ` not `TIMESTAMP` | Timezone-aware; no bugs across servers |
+| Use `UUID` for distributed PKs | Globally unique, no collision |
+| Use `JSONB` not `JSON` | Indexable, faster, binary |
+| Use `COALESCE` before aggregating | Avoid NULL-ruined averages |
+| Use `ON CONFLICT DO UPDATE` for upserts | Idempotent data pipelines |
+| Use connection pooling in prod | Don't open/close per request |
+| Use `EXPLAIN ANALYZE` to debug slow queries | Find bottlenecks |
+| Use `MATERIALIZED VIEW` for heavy aggregations | Pre-compute, then refresh |
+| Use `TRANSACTION` for multi-step operations | All-or-nothing consistency |
 
 ---
 
-## Comments & Documentation
-
-```sql
-COMMENT ON DATABASE mydb         IS 'Production database for the store application';
-COMMENT ON SCHEMA  sales         IS 'Sales and order management schema';
-COMMENT ON TABLE   employees     IS 'All current and former employees';
-COMMENT ON COLUMN  employees.id  IS 'Surrogate primary key, auto-generated';
-COMMENT ON COLUMN  employees.email IS 'Primary contact email, must be unique';
-COMMENT ON INDEX   idx_emp_email IS 'Speeds up login queries by email';
-COMMENT ON VIEW    active_employees IS 'All employees with is_active = true';
-COMMENT ON CONSTRAINT pk_employees ON employees IS 'Primary key for employees';
-COMMENT ON SEQUENCE order_number_seq IS 'Generates sequential order numbers';
-
--- Remove comment
-COMMENT ON TABLE employees IS NULL;
-
--- View comments
-SELECT obj_description('employees'::regclass, 'pg_class') AS table_comment;
-SELECT col_description('employees'::regclass, attnum) AS col_comment
-FROM pg_attribute WHERE attrelid = 'employees'::regclass AND attname = 'email';
-\d+ employees    -- psql shows comments
-```
-
----
-
-## Full Table Design Example
-
-```sql
--- Realistic multi-table schema showing all concepts together
-
-CREATE SCHEMA IF NOT EXISTS store;
-SET search_path TO store, public;
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-
-CREATE TYPE order_status AS ENUM
-    ('pending','confirmed','processing','shipped','delivered','cancelled','refunded');
-
-CREATE DOMAIN email_domain AS TEXT
-    CHECK (VALUE ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
-
-CREATE TABLE categories (
-    id          INT  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name        TEXT NOT NULL,
-    parent_id   INT  REFERENCES categories(id) ON DELETE SET NULL,
-    slug        TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_category_slug UNIQUE (slug),
-    CONSTRAINT chk_no_self_parent CHECK (id <> parent_id)
-);
-
-CREATE TABLE customers (
-    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    uuid          UUID NOT NULL DEFAULT uuid_generate_v4(),
-    email         email_domain NOT NULL,
-    first_name    TEXT NOT NULL,
-    last_name     TEXT NOT NULL,
-    full_name     TEXT GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED,
-    phone         VARCHAR(20),
-    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    metadata      JSONB NOT NULL DEFAULT '{}',
-    search_vector TSVECTOR GENERATED ALWAYS AS (
-        to_tsvector('english', first_name || ' ' || last_name || ' ' || email)
-    ) STORED,
-    CONSTRAINT uq_customer_email UNIQUE (email),
-    CONSTRAINT uq_customer_uuid  UNIQUE (uuid)
-);
-
-CREATE TABLE products (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    sku         VARCHAR(50) NOT NULL,
-    name        TEXT NOT NULL,
-    description TEXT,
-    price       NUMERIC(12,2) NOT NULL,
-    cost        NUMERIC(12,2),
-    stock       INT NOT NULL DEFAULT 0,
-    category_id INT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
-    tags        TEXT[] NOT NULL DEFAULT '{}',
-    attributes  JSONB NOT NULL DEFAULT '{}',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_product_sku   UNIQUE (sku),
-    CONSTRAINT chk_price_positive CHECK (price > 0),
-    CONSTRAINT chk_cost_positive  CHECK (cost IS NULL OR cost > 0),
-    CONSTRAINT chk_stock_gte_zero CHECK (stock >= 0)
-);
-
-CREATE TABLE orders (
-    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    order_number  TEXT NOT NULL DEFAULT ('ORD-' || TO_CHAR(NOW(), 'YYYY') || '-' || LPAD(nextval('order_seq')::text, 6, '0')),
-    customer_id   BIGINT NOT NULL,
-    status        order_status NOT NULL DEFAULT 'pending',
-    subtotal      NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
-    tax           NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (tax >= 0),
-    total         NUMERIC(12,2) GENERATED ALWAYS AS (subtotal + tax) STORED,
-    notes         TEXT,
-    ordered_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    shipped_at    TIMESTAMPTZ,
-    delivered_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_order_number UNIQUE (order_number),
-    CONSTRAINT fk_order_customer
-        FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
-    CONSTRAINT chk_shipped_after_order
-        CHECK (shipped_at IS NULL OR shipped_at >= ordered_at),
-    CONSTRAINT chk_delivered_after_shipped
-        CHECK (delivered_at IS NULL OR shipped_at IS NOT NULL AND delivered_at >= shipped_at)
-);
-
-CREATE TABLE order_items (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    order_id    BIGINT NOT NULL,
-    product_id  BIGINT NOT NULL,
-    quantity    INT    NOT NULL,
-    unit_price  NUMERIC(12,2) NOT NULL,
-    line_total  NUMERIC(12,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
-    CONSTRAINT pk_order_items     PRIMARY KEY (id),
-    CONSTRAINT uq_order_product   UNIQUE (order_id, product_id),
-    CONSTRAINT fk_item_order
-        FOREIGN KEY (order_id)   REFERENCES orders(id)   ON DELETE CASCADE,
-    CONSTRAINT fk_item_product
-        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
-    CONSTRAINT chk_quantity_pos   CHECK (quantity > 0),
-    CONSTRAINT chk_price_pos      CHECK (unit_price >= 0)
-);
-
--- Indexes
-CREATE INDEX idx_customers_email        ON customers(email);
-CREATE INDEX idx_customers_search       ON customers USING gin(search_vector);
-CREATE INDEX idx_customers_meta         ON customers USING gin(metadata);
-CREATE INDEX idx_products_category      ON products(category_id);
-CREATE INDEX idx_products_sku           ON products(sku);
-CREATE INDEX idx_products_tags          ON products USING gin(tags);
-CREATE INDEX idx_products_attrs         ON products USING gin(attributes);
-CREATE INDEX idx_orders_customer        ON orders(customer_id);
-CREATE INDEX idx_orders_status          ON orders(status);
-CREATE INDEX idx_orders_ordered_at      ON orders(ordered_at DESC);
-CREATE INDEX idx_active_products        ON products(category_id) WHERE is_active = TRUE;
-CREATE INDEX idx_pending_orders         ON orders(customer_id, ordered_at) WHERE status = 'pending';
-
--- Auto-update updated_at
-CREATE TRIGGER trg_customers_updated_at
-    BEFORE UPDATE ON customers FOR EACH ROW
-    EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_products_updated_at
-    BEFORE UPDATE ON products FOR EACH ROW
-    EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_orders_updated_at
-    BEFORE UPDATE ON orders FOR EACH ROW
-    EXECUTE FUNCTION set_updated_at();
-
--- Comments
-COMMENT ON TABLE customers   IS 'Registered customer accounts';
-COMMENT ON TABLE products    IS 'Product catalogue';
-COMMENT ON TABLE orders      IS 'Customer orders';
-COMMENT ON TABLE order_items IS 'Line items within an order';
-```
-
----
-
-## Quick Reference Card
-
-```
-Database        CREATE DATABASE  ALTER DATABASE  DROP DATABASE
-Schema          CREATE SCHEMA    ALTER SCHEMA    DROP SCHEMA   SET search_path
-Table           CREATE TABLE [IF NOT EXISTS] [LIKE] [AS SELECT] [TEMP] [UNLOGGED]
-                ALTER TABLE [ADD/DROP/RENAME/ALTER COLUMN] [ADD/DROP CONSTRAINT]
-                DROP TABLE [CASCADE]   TRUNCATE [RESTART IDENTITY]
-Data types      INT / BIGINT   NUMERIC(p,s)   TEXT / VARCHAR(n)
-                TIMESTAMPTZ (preferred)   BOOLEAN   UUID   JSONB   TEXT[]
-                GENERATED ALWAYS AS IDENTITY (preferred over SERIAL)
-Constraints     NOT NULL   DEFAULT   UNIQUE [NULLS NOT DISTINCT]
-                PRIMARY KEY   FOREIGN KEY … REFERENCES … ON DELETE/UPDATE action
-                CHECK (expression)   EXCLUDE USING gist (…)
-FK actions      RESTRICT   NO ACTION   CASCADE   SET NULL   SET DEFAULT
-Indexes         CREATE [UNIQUE] INDEX [CONCURRENTLY] … USING btree/hash/gin/gist/brin
-                Partial: WHERE clause   Covering: INCLUDE (cols)   Expression: (expr)
-Sequences       CREATE SEQUENCE   NEXTVAL / CURRVAL / SETVAL   OWNED BY
-Views           CREATE [OR REPLACE] VIEW … [WITH CHECK OPTION]
-                CREATE MATERIALIZED VIEW … REFRESH [CONCURRENTLY]
-Enum            CREATE TYPE … AS ENUM   ALTER TYPE … ADD VALUE
-Domain          CREATE DOMAIN … AS type CHECK (VALUE …)
-Trigger         CREATE TRIGGER BEFORE/AFTER/INSTEAD OF INSERT/UPDATE/DELETE
-                FOR EACH ROW/STATEMENT   EXECUTE FUNCTION
-Partition       PARTITION BY RANGE/LIST/HASH   CREATE TABLE … PARTITION OF
-                ATTACH PARTITION / DETACH PARTITION
-Roles           CREATE ROLE … LOGIN PASSWORD   GRANT/REVOKE … ON … TO/FROM
-Extensions      CREATE EXTENSION IF NOT EXISTS  uuid-ossp / pg_trgm / btree_gist / citext
-Comments        COMMENT ON TABLE/COLUMN/INDEX/CONSTRAINT/VIEW IS '…'
-```
-
----
-
-*Covers PostgreSQL 13–16. Docs: https://www.postgresql.org/docs/current/*
+*Generated for ML / DL / GenAI / Agentic AI engineers — covers PostgreSQL topics 60–82 with production AI system patterns.*
