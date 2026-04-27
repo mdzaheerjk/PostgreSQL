@@ -1,5 +1,7 @@
-# 🐘 PostgreSQL — Complete Notes for ML / DL / GenAI / Agentic AI
-> From absolute beginner → job-ready data engineer / AI engineer
+# 🐘 PostgreSQL — Complete Notes
+### From Absolute Beginner → Industry-Ready AI/ML Engineer
+
+> **How to use these notes:** Every section starts with *"What & Why"* (the concept in plain English), then *"Syntax"* (the exact code), then *"Real Examples"*, and finally *"AI/ML Use-Case"* (why this matters for your career). Read top-to-bottom the first time, then use as a reference.
 
 ---
 
@@ -23,1165 +25,1320 @@
 16. [Views](#16-views)
 17. [Import & Export](#17-import--export)
 18. [Python + PostgreSQL (psycopg2)](#18-python--postgresql-psycopg2)
-19. [PostgreSQL for ML / DL / GenAI / Agentic AI — Real-World Patterns](#19-postgresql-for-ml--dl--genai--agentic-ai--real-world-patterns)
+19. [PostgreSQL for ML / DL / GenAI / Agentic AI](#19-postgresql-for-ml--dl--genai--agentic-ai)
 20. [Job-Ready Cheat Sheet](#20-job-ready-cheat-sheet)
 
 ---
 
 ## 1. Data Types
 
-Data types define **what kind of data** a column can hold. Choosing the right type saves storage, speeds up queries, and prevents bad data.
+### What & Why
+
+A **data type** tells PostgreSQL exactly what kind of value a column will store. Choosing the right type is critical because:
+
+- It **saves disk space** (storing `TRUE/FALSE` as BOOLEAN uses 1 byte; as TEXT uses 5+ bytes)
+- It **prevents bad data** (a DATE column won't accept `"hello"`)
+- It **enables correct operations** (you can do math on INTEGER, not on TEXT)
+- In ML pipelines, **wrong types cause silent bugs** (e.g., `"3.5"` vs `3.5` for a model score)
+
+---
 
 ### Numeric Types
 
-| Type | Storage | Range / Use |
-|------|---------|------------|
-| `SMALLINT` | 2 bytes | –32,768 to 32,767 |
-| `INTEGER` / `INT` | 4 bytes | –2.1B to 2.1B (most common) |
-| `BIGINT` | 8 bytes | Very large integers |
-| `SERIAL` | 4 bytes | Auto-incrementing integer (shorthand) |
-| `BIGSERIAL` | 8 bytes | Auto-incrementing big integer |
-| `NUMERIC(p, s)` | Variable | Exact decimal; `p` = precision, `s` = scale |
-| `REAL` | 4 bytes | Floating-point (6 decimal digits) |
-| `DOUBLE PRECISION` | 8 bytes | Floating-point (15 decimal digits) |
+| Type | Storage | Range | Use When |
+|------|---------|-------|----------|
+| `SMALLINT` | 2 bytes | -32,768 to 32,767 | Age, small counts |
+| `INTEGER` / `INT` | 4 bytes | ~-2.1B to 2.1B | Row IDs, counts |
+| `BIGINT` | 8 bytes | ~-9.2 quintillion to 9.2 quintillion | User IDs at scale, timestamps |
+| `DECIMAL(p,s)` / `NUMERIC(p,s)` | Variable | Exact precision | Money, scientific measurements |
+| `REAL` | 4 bytes | 6 decimal digits precision | ML model scores (approx) |
+| `DOUBLE PRECISION` | 8 bytes | 15 decimal digits precision | High-precision embeddings |
+| `SERIAL` | 4 bytes | 1 to 2,147,483,647 | Auto-increment IDs |
+| `BIGSERIAL` | 8 bytes | 1 to 9,223,372,036,854,775,807 | Large-scale auto-increment IDs |
 
 ```sql
--- Examples
-salary    NUMERIC(10, 2)   -- up to 99,999,999.99
-score     REAL             -- 0.93847
-model_id  BIGSERIAL        -- auto-incremented ID
-```
+-- DECIMAL(precision, scale)
+-- precision = total digits, scale = digits after decimal point
+-- DECIMAL(10, 2) can store: 12345678.99
 
-> **ML note:** Use `NUMERIC` for financial features (no rounding error). Use `REAL` or `DOUBLE PRECISION` for model scores, embeddings dimensions, probabilities.
-
----
-
-### Character / Text Types
-
-| Type | Description |
-|------|-------------|
-| `CHAR(n)` | Fixed-length string, padded with spaces |
-| `VARCHAR(n)` | Variable-length string, max `n` characters |
-| `TEXT` | Unlimited length string (most flexible) |
-
-```sql
-username   VARCHAR(50)
-bio        TEXT
-country_code CHAR(2)    -- always 'IN', 'US', etc.
-```
-
-> **GenAI note:** Use `TEXT` for storing prompts, completions, chat history, and document chunks — no length limit.
-
----
-
-### Boolean
-
-```sql
-is_active   BOOLEAN   -- TRUE, FALSE, NULL
-```
-
-```sql
-SELECT * FROM models WHERE is_deployed = TRUE;
+CREATE TABLE model_metrics (
+    model_id        SERIAL,
+    accuracy        DECIMAL(5, 4),    -- e.g., 0.9823
+    loss            DOUBLE PRECISION, -- e.g., 0.001234567891234
+    epoch           SMALLINT,         -- e.g., 50
+    total_params    BIGINT            -- e.g., 7000000000 (7 billion)
+);
 ```
 
 ---
 
-### Date / Time Types
+### Character / String Types
 
-| Type | Description |
-|------|-------------|
-| `DATE` | Date only (YYYY-MM-DD) |
-| `TIME` | Time only |
-| `TIMESTAMP` | Date + time (no timezone) |
-| `TIMESTAMPTZ` | Date + time **with** timezone (recommended) |
-| `INTERVAL` | Duration (e.g., `'3 days'`) |
+| Type | Description | Use When |
+|------|-------------|----------|
+| `CHAR(n)` | Fixed-length, padded with spaces | Country codes (`'US'`, `'IN'`) |
+| `VARCHAR(n)` | Variable-length, max n chars | Names, email addresses |
+| `TEXT` | Unlimited length | Descriptions, prompts, documents |
 
 ```sql
-created_at   TIMESTAMPTZ DEFAULT NOW()
-trained_on   DATE
-duration     INTERVAL
+-- VARCHAR vs TEXT
+-- VARCHAR(255): max 255 chars — good for constrained fields
+-- TEXT: no limit — good for LLM prompts or article bodies
+
+CREATE TABLE llm_prompts (
+    prompt_id   SERIAL,
+    user_name   VARCHAR(100),     -- bounded: names aren't infinite
+    prompt_text TEXT,             -- unbounded: prompts can be very long
+    model_code  CHAR(10)          -- fixed: 'gpt-4o    ' (padded)
+);
 ```
 
-> **ML note:** Always use `TIMESTAMPTZ` for experiment timestamps to avoid timezone bugs across servers.
+**⚠️ Common Beginner Mistake:** Using `VARCHAR(255)` for everything. Use `TEXT` for long content — it's equally fast in PostgreSQL.
+
+---
+
+### Boolean Type
+
+```sql
+-- BOOLEAN stores TRUE, FALSE, or NULL
+-- Accepted inputs: TRUE/FALSE, 'yes'/'no', 'on'/'off', '1'/'0'
+
+CREATE TABLE model_registry (
+    model_id        SERIAL,
+    model_name      VARCHAR(100),
+    is_deployed     BOOLEAN DEFAULT FALSE,
+    is_fine_tuned   BOOLEAN DEFAULT NULL   -- NULL = "unknown"
+);
+
+-- Query
+SELECT * FROM model_registry WHERE is_deployed = TRUE;
+SELECT * FROM model_registry WHERE is_fine_tuned IS NULL;
+```
+
+---
+
+### Date & Time Types
+
+| Type | Storage | Description | Example |
+|------|---------|-------------|---------|
+| `DATE` | 4 bytes | Calendar date only | `2024-01-15` |
+| `TIME` | 8 bytes | Time of day only | `14:30:00` |
+| `TIMESTAMP` | 8 bytes | Date + time, no timezone | `2024-01-15 14:30:00` |
+| `TIMESTAMPTZ` | 8 bytes | Date + time WITH timezone | `2024-01-15 14:30:00+05:30` |
+| `INTERVAL` | 16 bytes | Duration | `3 days`, `2 hours` |
+
+```sql
+-- ALWAYS use TIMESTAMPTZ in production — timezone bugs are nasty
+CREATE TABLE training_runs (
+    run_id          SERIAL,
+    started_at      TIMESTAMPTZ DEFAULT NOW(),
+    finished_at     TIMESTAMPTZ,
+    duration        INTERVAL GENERATED ALWAYS AS (finished_at - started_at) STORED
+);
+
+-- Date arithmetic
+SELECT NOW() + INTERVAL '7 days';      -- a week from now
+SELECT AGE('2024-01-01', '2023-01-01'); -- returns '1 year'
+SELECT EXTRACT(YEAR FROM NOW());        -- returns current year
+```
 
 ---
 
 ### JSON Types
 
-| Type | Description |
-|------|-------------|
-| `JSON` | Stores raw JSON text |
-| `JSONB` | Binary JSON — **indexed, faster queries** |
+| Type | Description | Use When |
+|------|-------------|----------|
+| `JSON` | Stores raw JSON text | You need exact original formatting |
+| `JSONB` | Stores binary JSON (parsed) | **Always prefer this** — indexable, faster queries |
 
 ```sql
-hyperparams  JSONB   -- {"lr": 0.001, "epochs": 10, "batch": 32}
-metadata     JSONB
-```
+-- JSONB is the go-to for AI/ML metadata storage
+CREATE TABLE experiment_logs (
+    exp_id      SERIAL,
+    run_name    VARCHAR(200),
+    hyperparams JSONB,      -- {"lr": 0.001, "batch_size": 32, "epochs": 100}
+    metrics     JSONB       -- {"accuracy": 0.95, "f1": 0.94}
+);
 
-```sql
 -- Query inside JSONB
-SELECT * FROM experiments WHERE hyperparams->>'lr' = '0.001';
-SELECT * FROM experiments WHERE hyperparams @> '{"epochs": 10}';
-```
+SELECT run_name, hyperparams->>'lr' AS learning_rate
+FROM experiment_logs
+WHERE (metrics->>'accuracy')::FLOAT > 0.90;
 
-> **Agentic AI note:** `JSONB` is the go-to for storing agent state, tool call results, memory, and structured LLM outputs.
+-- JSONB containment operator @>
+SELECT * FROM experiment_logs
+WHERE hyperparams @> '{"batch_size": 32}';
+```
 
 ---
 
 ### Array Types
 
 ```sql
-tags       TEXT[]       -- {'machine-learning', 'nlp'}
-scores     REAL[]       -- {0.91, 0.87, 0.94}
-embedding  VECTOR(1536) -- (with pgvector extension)
-```
+-- PostgreSQL supports arrays natively
+CREATE TABLE documents (
+    doc_id      SERIAL,
+    title       TEXT,
+    tags        TEXT[],          -- array of strings
+    embedding   DOUBLE PRECISION[] -- array of floats (for vector storage)
+);
 
-```sql
-SELECT * FROM articles WHERE 'nlp' = ANY(tags);
+INSERT INTO documents (title, tags, embedding)
+VALUES ('AI Intro', ARRAY['ml', 'beginner', 'python'], ARRAY[0.1, 0.8, 0.3, 0.5]);
+
+-- Query array
+SELECT title FROM documents WHERE 'ml' = ANY(tags);
+SELECT title, embedding[1] AS first_dim FROM documents;  -- 1-indexed!
 ```
 
 ---
 
-### UUID
+### UUID Type
 
 ```sql
-id   UUID DEFAULT gen_random_uuid()
-```
+-- UUID = Universally Unique Identifier
+-- Format: 550e8400-e29b-41d4-a716-446655440000
+-- Use for: distributed systems, API keys, public-facing IDs
 
-> **Best practice:** Use `UUID` as primary key for distributed systems, APIs, and microservices — avoids ID collision across services.
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- enables gen_random_uuid()
+
+CREATE TABLE api_keys (
+    key_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id     INTEGER,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
 
 ---
 
-### Special Types
+### Special Types for AI/ML
 
-| Type | Use Case |
-|------|----------|
-| `BYTEA` | Raw binary data (images, model weights) |
-| `INET` | IP addresses |
-| `TSVECTOR` | Full-text search |
-| `VECTOR(n)` | pgvector — AI embeddings |
+```sql
+-- pgvector extension — stores and searches ML embeddings
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE document_embeddings (
+    id          SERIAL PRIMARY KEY,
+    content     TEXT,
+    embedding   vector(1536)    -- OpenAI ada-002 produces 1536-dim vectors
+);
+
+-- Cosine similarity search (Retrieval-Augmented Generation / RAG)
+SELECT content, 1 - (embedding <=> '[0.1, 0.2, ...]'::vector) AS similarity
+FROM document_embeddings
+ORDER BY embedding <=> '[0.1, 0.2, ...]'::vector
+LIMIT 5;
+```
 
 ---
 
 ## 2. Primary Keys & Foreign Keys
 
+### What & Why
+
+**Primary Key (PK):** A column (or set of columns) that **uniquely identifies every row** in a table. Think of it as a student roll number — no two students share the same one.
+
+**Foreign Key (FK):** A column in one table that **references the Primary Key of another table**. This creates a relationship and enforces referential integrity — you can't reference a row that doesn't exist.
+
+```
+users table              orders table
+-----------              ------------
+user_id (PK)  ←———     user_id (FK)  references users.user_id
+username                 order_id (PK)
+email                    amount
+```
+
+---
+
 ### Primary Key
 
-A **Primary Key (PK)** uniquely identifies each row. Rules:
-- Must be **unique**
-- Cannot be **NULL**
-- Each table should have exactly **one** PK
-
 ```sql
+-- Method 1: Inline definition
 CREATE TABLE users (
-    user_id   SERIAL PRIMARY KEY,
-    username  VARCHAR(50) NOT NULL,
-    email     TEXT UNIQUE NOT NULL
+    user_id   SERIAL PRIMARY KEY,    -- auto-increment + unique + not null
+    email     VARCHAR(255)
 );
-```
 
-Using UUID as PK (modern approach):
-```sql
+-- Method 2: Table-level definition (useful for composite PKs)
+CREATE TABLE user_roles (
+    user_id   INTEGER,
+    role_id   INTEGER,
+    PRIMARY KEY (user_id, role_id)   -- composite PK: combination must be unique
+);
+
+-- SERIAL vs UUID as PK
+-- SERIAL: simpler, smaller, faster joins — use for internal tables
+-- UUID:   globally unique, safe for APIs — use for public-facing IDs
 CREATE TABLE sessions (
-    session_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id    INTEGER,
-    started_at TIMESTAMPTZ DEFAULT NOW()
+    session_id  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id     INTEGER,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-Composite Primary Key (using multiple columns):
-```sql
-CREATE TABLE model_metrics (
-    model_id   INTEGER,
-    epoch      INTEGER,
-    accuracy   REAL,
-    PRIMARY KEY (model_id, epoch)   -- combination must be unique
-);
-```
+**Rules a Primary Key automatically enforces:**
+1. **NOT NULL** — every row must have a value
+2. **UNIQUE** — no two rows can have the same value
+3. **One PK per table** — you can only have one primary key
 
 ---
 
 ### Foreign Key
 
-A **Foreign Key (FK)** links a column in one table to the PK of another table. Enforces **referential integrity** — you can't have orphan records.
+```sql
+-- Basic Foreign Key
+CREATE TABLE orders (
+    order_id    SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(user_id),  -- FK shorthand
+    amount      DECIMAL(10, 2),
+    ordered_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Full syntax with ON DELETE / ON UPDATE behavior
+CREATE TABLE order_items (
+    item_id     SERIAL PRIMARY KEY,
+    order_id    INTEGER,
+    product_id  INTEGER,
+    quantity    INTEGER,
+    
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+        ON DELETE CASCADE      -- delete items when order is deleted
+        ON UPDATE CASCADE,     -- update item.order_id if order.order_id changes
+    
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+        ON DELETE RESTRICT     -- block deletion of product if items reference it
+);
+```
+
+### ON DELETE Behaviors — Explained
+
+| Action | What happens to child rows | Use case |
+|--------|---------------------------|----------|
+| `RESTRICT` | Error — blocks parent deletion | Protect important data |
+| `CASCADE` | Child rows are also deleted | Orders → items relationship |
+| `SET NULL` | FK column set to NULL | Optional relationships |
+| `SET DEFAULT` | FK column set to its DEFAULT | Reassign to a default owner |
+| `NO ACTION` | Error (default, checked at end of transaction) | Most common default |
 
 ```sql
+-- Real-world example: ML experiment tracking
 CREATE TABLE experiments (
     exp_id      SERIAL PRIMARY KEY,
-    user_id     INTEGER REFERENCES users(user_id),
-    model_name  TEXT,
+    name        VARCHAR(200),
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
-```
 
-Full FK syntax with actions:
-```sql
-CREATE TABLE predictions (
-    pred_id    SERIAL PRIMARY KEY,
-    exp_id     INTEGER,
-    input_text TEXT,
-    output     TEXT,
-    FOREIGN KEY (exp_id)
-        REFERENCES experiments(exp_id)
-        ON DELETE CASCADE    -- delete predictions if experiment deleted
-        ON UPDATE CASCADE    -- update if experiment id changes
+CREATE TABLE runs (
+    run_id      SERIAL PRIMARY KEY,
+    exp_id      INTEGER NOT NULL,
+    status      VARCHAR(50),
+    metrics     JSONB,
+    
+    FOREIGN KEY (exp_id) REFERENCES experiments(exp_id)
+        ON DELETE CASCADE   -- delete all runs when experiment is deleted
 );
-```
 
-### ON DELETE / ON UPDATE Options
-
-| Option | Behavior |
-|--------|----------|
-| `CASCADE` | Automatically delete/update child rows |
-| `SET NULL` | Set FK column to NULL |
-| `SET DEFAULT` | Set FK column to default value |
-| `RESTRICT` | Prevent deletion if child rows exist |
-| `NO ACTION` | Same as RESTRICT (default) |
-
----
-
-### Visual: Relationship Diagram
-
-```
-users (user_id PK)
-    │
-    ├──→ experiments (exp_id PK, user_id FK → users)
-    │         │
-    │         └──→ predictions (pred_id PK, exp_id FK → experiments)
-    │
-    └──→ sessions (session_id PK, user_id FK → users)
+CREATE TABLE artifacts (
+    artifact_id  SERIAL PRIMARY KEY,
+    run_id       INTEGER,
+    file_path    TEXT,
+    
+    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+        ON DELETE SET NULL  -- keep artifact record even if run is deleted
+);
 ```
 
 ---
 
 ## 3. Constraints
 
-Constraints are **rules** that enforce data integrity at the database level — the last line of defense before bad data enters.
+### What & Why
 
-### Types of Constraints
+Constraints are **rules enforced at the database level** to guarantee data quality. Instead of relying on application code to validate data, you embed the rules in the database itself — so no matter what inserts data (Python script, API, admin tool), the rules always apply.
 
-| Constraint | Description |
-|------------|-------------|
-| `NOT NULL` | Column cannot be empty |
-| `UNIQUE` | All values in column must differ |
-| `PRIMARY KEY` | Unique + Not Null (identifier) |
-| `FOREIGN KEY` | References another table's PK |
-| `CHECK` | Custom condition must be true |
-| `DEFAULT` | Default value if none provided |
+---
 
-### Column-Level Constraints
+### All Constraints at a Glance
 
 ```sql
-CREATE TABLE ml_models (
-    model_id    SERIAL PRIMARY KEY,
-    model_name  VARCHAR(100) NOT NULL,
-    version     VARCHAR(20)  NOT NULL DEFAULT '1.0.0',
-    accuracy    REAL         CHECK (accuracy BETWEEN 0 AND 1),
-    framework   TEXT         CHECK (framework IN ('pytorch', 'tensorflow', 'jax')),
-    created_at  TIMESTAMPTZ  DEFAULT NOW()
+CREATE TABLE complete_example (
+    -- NOT NULL: column must have a value
+    user_id     SERIAL,
+    
+    -- UNIQUE: no two rows can have the same value
+    email       VARCHAR(255) UNIQUE,
+    
+    -- NOT NULL: value required
+    username    VARCHAR(100) NOT NULL,
+    
+    -- DEFAULT: value used when none is provided
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    is_active   BOOLEAN DEFAULT TRUE,
+    
+    -- CHECK: custom validation rule
+    age         INTEGER CHECK (age >= 0 AND age <= 150),
+    score       DECIMAL(5,2) CHECK (score BETWEEN 0.0 AND 100.0),
+    
+    -- PRIMARY KEY: unique + not null
+    PRIMARY KEY (user_id),
+    
+    -- Named constraints (recommended for large schemas)
+    CONSTRAINT chk_username_length CHECK (LENGTH(username) >= 3),
+    CONSTRAINT uq_email UNIQUE (email)
 );
 ```
 
-### Table-Level Constraints
+---
+
+### NOT NULL
 
 ```sql
-CREATE TABLE ab_tests (
-    test_id    SERIAL,
-    model_a    INTEGER NOT NULL,
-    model_b    INTEGER NOT NULL,
-    start_date DATE,
-    end_date   DATE,
-    PRIMARY KEY (test_id),
-    CHECK (model_a <> model_b),              -- can't A/B test same model
-    CHECK (end_date > start_date)            -- end must be after start
+-- Without NOT NULL, any column can be NULL (missing/unknown)
+-- NULL is not zero, not empty string — it means "no value"
+
+CREATE TABLE model_versions (
+    version_id   SERIAL PRIMARY KEY,
+    model_name   VARCHAR(100) NOT NULL,    -- must always have a name
+    version_tag  VARCHAR(50)  NOT NULL,    -- must always have a version
+    description  TEXT,                     -- optional — NULLs allowed
+    deployed_at  TIMESTAMPTZ               -- optional — might not be deployed yet
 );
+
+-- NULL behavior
+SELECT NULL = NULL;     -- returns NULL (not TRUE!)
+SELECT NULL IS NULL;    -- returns TRUE — use IS NULL to check for nulls
+SELECT NULL IS NOT NULL;-- returns FALSE
 ```
 
-### Adding Constraints to Existing Tables
+---
+
+### UNIQUE
 
 ```sql
-ALTER TABLE ml_models ADD CONSTRAINT chk_version
-    CHECK (version ~ '^\d+\.\d+\.\d+$');    -- semantic version regex
+-- Single column unique
+CREATE TABLE api_users (
+    id      SERIAL PRIMARY KEY,
+    email   VARCHAR(255) UNIQUE,        -- one account per email
+    phone   VARCHAR(20)  UNIQUE         -- one account per phone
+);
 
-ALTER TABLE users ADD CONSTRAINT uq_email UNIQUE (email);
+-- Composite unique (combination must be unique)
+CREATE TABLE team_members (
+    team_id     INTEGER,
+    user_id     INTEGER,
+    UNIQUE (team_id, user_id)           -- a user can only be in a team once
+);
+
+-- Adding unique constraint to existing table
+ALTER TABLE api_users ADD CONSTRAINT uq_username UNIQUE (username);
 ```
 
-### Removing Constraints
+---
+
+### DEFAULT
 
 ```sql
-ALTER TABLE ml_models DROP CONSTRAINT chk_version;
+CREATE TABLE chat_messages (
+    msg_id      SERIAL PRIMARY KEY,
+    content     TEXT NOT NULL,
+    role        VARCHAR(20) DEFAULT 'user',    -- 'user', 'assistant', 'system'
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    token_count INTEGER DEFAULT 0,
+    is_deleted  BOOLEAN DEFAULT FALSE
+);
+
+-- Insert without specifying default columns
+INSERT INTO chat_messages (content) VALUES ('Hello!');
+-- role='user', created_at=NOW(), token_count=0, is_deleted=FALSE are auto-set
 ```
 
 ---
 
 ## 4. CREATE TABLE
 
-`CREATE TABLE` defines a new table's structure — columns, types, and constraints.
+### What & Why
 
-### Basic Syntax
+`CREATE TABLE` defines the **structure (schema)** of your data. It's the blueprint before any data is stored. Getting this right upfront saves you from painful migrations later.
+
+---
+
+### Full Syntax
 
 ```sql
-CREATE TABLE table_name (
-    column1  datatype  constraints,
-    column2  datatype  constraints,
+CREATE TABLE [IF NOT EXISTS] table_name (
+    column_name  data_type  [constraints],
     ...
-    table_constraints
+    [table_constraints]
 );
 ```
 
-### Simple Example
+---
+
+### Beginner Example
 
 ```sql
-CREATE TABLE datasets (
-    dataset_id   SERIAL PRIMARY KEY,
-    name         VARCHAR(100) NOT NULL,
+-- Simple user table
+CREATE TABLE users (
+    user_id    SERIAL PRIMARY KEY,
+    first_name VARCHAR(50)  NOT NULL,
+    last_name  VARCHAR(50)  NOT NULL,
+    email      VARCHAR(255) NOT NULL UNIQUE,
+    age        INTEGER      CHECK (age >= 18),
+    created_at TIMESTAMPTZ  DEFAULT NOW()
+);
+```
+
+### Intermediate Example
+
+```sql
+-- E-commerce style
+CREATE TABLE products (
+    product_id   SERIAL PRIMARY KEY,
+    name         VARCHAR(200) NOT NULL,
     description  TEXT,
-    rows_count   BIGINT,
-    size_mb      NUMERIC(10, 2),
-    is_public    BOOLEAN DEFAULT TRUE,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
+    price        DECIMAL(10, 2) NOT NULL CHECK (price >= 0),
+    stock_qty    INTEGER DEFAULT 0 CHECK (stock_qty >= 0),
+    category     VARCHAR(100),
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE orders (
+    order_id    SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    status      VARCHAR(50) DEFAULT 'pending' 
+                    CHECK (status IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled')),
+    total       DECIMAL(10, 2),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-### Real ML System Example
+### Advanced: ML Experiment Tracking Schema
 
 ```sql
--- Users who train models
-CREATE TABLE data_scientists (
-    ds_id       UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    full_name   VARCHAR(100) NOT NULL,
-    email       TEXT UNIQUE NOT NULL,
-    team        VARCHAR(50),
-    joined_at   DATE DEFAULT CURRENT_DATE
+-- Real-world MLflow-style schema
+
+CREATE TABLE projects (
+    project_id  SERIAL PRIMARY KEY,
+    name        VARCHAR(200) NOT NULL UNIQUE,
+    description TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ML experiment tracking
 CREATE TABLE experiments (
-    exp_id        SERIAL PRIMARY KEY,
-    ds_id         UUID REFERENCES data_scientists(ds_id) ON DELETE SET NULL,
-    dataset_id    INTEGER REFERENCES datasets(dataset_id),
-    model_type    VARCHAR(50) NOT NULL,
-    hyperparams   JSONB,
-    train_loss    REAL,
-    val_loss      REAL,
-    accuracy      REAL CHECK (accuracy BETWEEN 0.0 AND 1.0),
-    status        VARCHAR(20) DEFAULT 'running'
-                  CHECK (status IN ('running','completed','failed')),
-    started_at    TIMESTAMPTZ DEFAULT NOW(),
-    finished_at   TIMESTAMPTZ
+    exp_id      SERIAL PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    name        VARCHAR(200) NOT NULL,
+    tags        TEXT[],
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (project_id, name)
 );
-```
 
-### CREATE TABLE IF NOT EXISTS
-
-```sql
--- Safe: doesn't throw error if table already exists
-CREATE TABLE IF NOT EXISTS chat_history (
-    id         SERIAL PRIMARY KEY,
-    session_id UUID,
-    role       TEXT CHECK (role IN ('user','assistant','system')),
-    content    TEXT NOT NULL,
-    tokens     INTEGER,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE runs (
+    run_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    exp_id      INTEGER NOT NULL REFERENCES experiments(exp_id) ON DELETE CASCADE,
+    status      VARCHAR(20) DEFAULT 'running'
+                    CHECK (status IN ('running', 'completed', 'failed', 'killed')),
+    start_time  TIMESTAMPTZ DEFAULT NOW(),
+    end_time    TIMESTAMPTZ,
+    hyperparams JSONB,
+    metrics     JSONB,
+    artifact_uri TEXT
 );
-```
 
-### CREATE TABLE AS (from a query)
-
-```sql
--- Create a new table from query results
-CREATE TABLE top_models AS
-SELECT model_id, model_name, accuracy
-FROM experiments
-WHERE accuracy > 0.95
-ORDER BY accuracy DESC;
-```
-
-### Temporary Tables
-
-```sql
--- Exists only for current session
-CREATE TEMP TABLE batch_predictions (
-    input_id  INTEGER,
-    score     REAL
-);
+-- CREATE TABLE ... LIKE (inherit structure from another table)
+CREATE TABLE runs_archive (LIKE runs INCLUDING ALL);
 ```
 
 ---
 
 ## 5. INSERT
 
-`INSERT` adds new rows to a table.
+### What & Why
+
+`INSERT` adds new rows of data into a table. It's how you populate your database — from loading datasets to recording new user actions.
+
+---
 
 ### Basic Syntax
 
 ```sql
+-- Insert a single row (specify columns explicitly — always safer)
 INSERT INTO table_name (column1, column2, ...)
 VALUES (value1, value2, ...);
+
+-- Insert a single row without column list (ORDER MUST MATCH TABLE DEFINITION)
+INSERT INTO table_name VALUES (value1, value2, ...);  -- risky, avoid this
+
+-- Insert multiple rows at once (much faster than multiple single inserts)
+INSERT INTO table_name (column1, column2)
+VALUES 
+    (val1a, val2a),
+    (val1b, val2b),
+    (val1c, val2c);
 ```
 
-### Single Row Insert
+---
+
+### Examples
 
 ```sql
-INSERT INTO datasets (name, description, rows_count, size_mb, is_public)
-VALUES ('IMDB Reviews', 'Sentiment analysis dataset', 50000, 125.4, TRUE);
-```
+-- Single insert
+INSERT INTO users (first_name, last_name, email, age)
+VALUES ('Alice', 'Smith', 'alice@example.com', 28);
 
-### Multiple Row Insert (Bulk)
-
-```sql
-INSERT INTO ml_models (model_name, framework, accuracy)
+-- Multiple inserts (batch insert — preferred for performance)
+INSERT INTO products (name, price, stock_qty, category)
 VALUES
-    ('BERT-base',   'pytorch',     0.923),
-    ('RoBERTa',     'pytorch',     0.941),
-    ('DistilBERT',  'pytorch',     0.911),
-    ('T5-small',    'tensorflow',  0.887);
+    ('Python Textbook',  49.99,  100, 'books'),
+    ('GPU Server',    2999.00,    5, 'hardware'),
+    ('Cloud Credits',  200.00, 1000, 'services');
+
+-- Insert with RETURNING (get back the auto-generated ID)
+INSERT INTO experiments (project_id, name, tags)
+VALUES (1, 'Baseline Run', ARRAY['v1', 'baseline'])
+RETURNING exp_id, created_at;
+-- Returns: exp_id=42, created_at=2024-01-15 09:00:00+00
+
+-- Insert from a SELECT (copy data from another table)
+INSERT INTO runs_archive (run_id, exp_id, status, start_time)
+SELECT run_id, exp_id, status, start_time
+FROM runs
+WHERE status = 'completed' AND start_time < NOW() - INTERVAL '30 days';
 ```
 
-### INSERT with RETURNING
+---
+
+### INSERT ON CONFLICT (Upsert)
+
+This is one of PostgreSQL's most powerful features — insert a row, but if a conflict occurs (duplicate PK/unique), do something else instead of throwing an error.
 
 ```sql
--- Get the generated ID back immediately
-INSERT INTO experiments (ds_id, model_type, hyperparams)
-VALUES (
-    'a1b2c3d4-....',
-    'transformer',
-    '{"lr": 0.0001, "epochs": 20, "batch_size": 32}'::JSONB
-)
-RETURNING exp_id, started_at;
-```
-
-### INSERT … ON CONFLICT (Upsert)
-
-```sql
--- Insert or update if conflict on unique key
-INSERT INTO model_registry (model_name, version, accuracy)
-VALUES ('GPT-4-mini', '1.2.0', 0.952)
-ON CONFLICT (model_name, version)
-DO UPDATE SET
-    accuracy   = EXCLUDED.accuracy,
-    updated_at = NOW();
-
--- Insert or ignore if already exists
+-- ON CONFLICT DO NOTHING — skip if duplicate
 INSERT INTO users (email, username)
-VALUES ('alice@ai.com', 'alice')
+VALUES ('alice@example.com', 'alice')
 ON CONFLICT (email) DO NOTHING;
-```
 
-> **Agentic AI note:** Upsert is critical for agent memory updates — you don't want duplicate memories, just updates.
+-- ON CONFLICT DO UPDATE — update the existing row (UPSERT pattern)
+INSERT INTO model_registry (model_name, version, accuracy, deployed_at)
+VALUES ('bert-base', 'v2.1', 0.934, NOW())
+ON CONFLICT (model_name, version) 
+DO UPDATE SET 
+    accuracy = EXCLUDED.accuracy,      -- EXCLUDED refers to the new row
+    deployed_at = EXCLUDED.deployed_at;
 
-### INSERT from SELECT
-
-```sql
--- Copy rows from one table into another
-INSERT INTO model_archive (model_id, model_name, accuracy)
-SELECT model_id, model_name, accuracy
-FROM experiments
-WHERE status = 'completed' AND accuracy > 0.90;
+-- Practical AI use case: upserting document embeddings
+INSERT INTO document_embeddings (doc_id, content, embedding)
+VALUES (101, 'Introduction to AI', '[0.1, 0.2, ...]'::vector)
+ON CONFLICT (doc_id) 
+DO UPDATE SET 
+    embedding = EXCLUDED.embedding,
+    updated_at = NOW();
 ```
 
 ---
 
 ## 6. UPDATE
 
-`UPDATE` modifies existing rows.
+### What & Why
 
-### Basic Syntax
+`UPDATE` modifies existing rows. **Always use a WHERE clause** — without it, you update every single row in the table (a very common and devastating mistake).
+
+---
+
+### Syntax
 
 ```sql
 UPDATE table_name
-SET column1 = value1, column2 = value2
+SET column1 = value1,
+    column2 = value2
 WHERE condition;
 ```
 
-> ⚠️ **ALWAYS use WHERE.** Without it, every row gets updated!
+---
 
-### Simple Update
-
-```sql
-UPDATE experiments
-SET status = 'completed', finished_at = NOW()
-WHERE exp_id = 42;
-```
-
-### Update Multiple Columns
+### Examples
 
 ```sql
-UPDATE ml_models
-SET
-    accuracy   = 0.967,
-    version    = '2.1.0',
-    updated_at = NOW()
-WHERE model_name = 'BERT-base';
-```
+-- Update a single row
+UPDATE users
+SET email = 'newalice@example.com'
+WHERE user_id = 1;
 
-### Update with Calculation
-
-```sql
+-- Update multiple columns
 UPDATE products
-SET price = price * 1.10     -- 10% price increase
-WHERE category = 'premium';
-```
+SET price = price * 1.10,    -- 10% price increase
+    updated_at = NOW()
+WHERE category = 'books';
 
-### Update Using Another Table (JOIN)
-
-```sql
-UPDATE experiments e
-SET accuracy = m.best_accuracy
-FROM model_benchmarks m
-WHERE e.model_type = m.model_type;
-```
-
-### UPDATE with RETURNING
-
-```sql
-UPDATE experiments
+-- Update with a subquery
+UPDATE runs
 SET status = 'failed'
-WHERE started_at < NOW() - INTERVAL '24 hours'
-  AND status = 'running'
-RETURNING exp_id, model_type, started_at;
+WHERE exp_id IN (
+    SELECT exp_id FROM experiments WHERE name LIKE '%deprecated%'
+);
+
+-- UPDATE with RETURNING (see what changed)
+UPDATE model_registry
+SET is_deployed = TRUE,
+    deployed_at = NOW()
+WHERE model_name = 'gpt-fine-tuned-v3'
+RETURNING model_name, deployed_at;
+
+-- UPDATE using values from another table (UPDATE ... FROM)
+UPDATE orders o
+SET status = 'shipped'
+FROM shipments s
+WHERE o.order_id = s.order_id
+  AND s.shipped_at IS NOT NULL;
 ```
 
-### Conditional Update (CASE in SET)
-
+**⚠️ Safety Tip:** Before running an UPDATE, run the equivalent SELECT first:
 ```sql
-UPDATE predictions
-SET confidence_label =
-    CASE
-        WHEN score >= 0.9  THEN 'high'
-        WHEN score >= 0.7  THEN 'medium'
-        ELSE 'low'
-    END;
+-- First verify what you're about to update
+SELECT * FROM users WHERE user_id = 1;
+-- Then update
+UPDATE users SET email = 'new@email.com' WHERE user_id = 1;
 ```
 
 ---
 
 ## 7. DELETE
 
-`DELETE` removes rows from a table.
+### What & Why
 
-### Basic Syntax
+`DELETE` removes rows from a table. Like UPDATE, **always use a WHERE clause** unless you truly want to delete everything.
 
-```sql
-DELETE FROM table_name WHERE condition;
-```
+---
 
-> ⚠️ **ALWAYS use WHERE.** `DELETE FROM table;` deletes ALL rows!
-
-### Simple Delete
+### Syntax & Examples
 
 ```sql
-DELETE FROM experiments WHERE status = 'failed';
-```
+-- Delete specific rows
+DELETE FROM users WHERE user_id = 42;
 
-### Delete with Subquery
+-- Delete with a condition
+DELETE FROM sessions WHERE created_at < NOW() - INTERVAL '30 days';
 
-```sql
--- Delete predictions for experiments older than 1 year
-DELETE FROM predictions
+-- Delete with subquery
+DELETE FROM runs
 WHERE exp_id IN (
-    SELECT exp_id FROM experiments
-    WHERE created_at < NOW() - INTERVAL '1 year'
+    SELECT exp_id FROM experiments WHERE project_id = 5
 );
+
+-- DELETE with RETURNING
+DELETE FROM cart_items 
+WHERE user_id = 101 AND added_at < NOW() - INTERVAL '7 days'
+RETURNING item_id, product_id;
+
+-- Delete ALL rows (but keep the table structure)
+DELETE FROM temp_processing_table;
+-- vs TRUNCATE (much faster for clearing large tables)
+TRUNCATE TABLE temp_processing_table;
+TRUNCATE TABLE temp_processing_table RESTART IDENTITY; -- also resets SERIAL counter
 ```
 
-### DELETE with RETURNING
+### DELETE vs TRUNCATE vs DROP
 
-```sql
-DELETE FROM chat_history
-WHERE session_id = 'abc-123' AND created_at < NOW() - INTERVAL '30 days'
-RETURNING id, content;
-```
-
-### TRUNCATE (fast delete all rows)
-
-```sql
-TRUNCATE TABLE temp_predictions;               -- delete all, reset identity
-TRUNCATE TABLE temp_predictions RESTART IDENTITY CASCADE;
-```
-
-| Command | Speed | Rollback | Triggers | WHERE clause |
-|---------|-------|----------|----------|--------------|
-| `DELETE` | Slow | Yes | Yes | Yes |
-| `TRUNCATE` | Fast | Yes (in transaction) | No | No |
+| Command | What it does | Can WHERE? | Rollback? | Speed |
+|---------|-------------|------------|-----------|-------|
+| `DELETE` | Removes rows | ✅ Yes | ✅ Yes | Slow |
+| `TRUNCATE` | Removes all rows | ❌ No | ✅ Yes (within txn) | Very Fast |
+| `DROP TABLE` | Removes table entirely | ❌ No | ✅ Yes (within txn) | Instant |
 
 ---
 
 ## 8. ALTER TABLE
 
-`ALTER TABLE` modifies an existing table's structure — add columns, change types, rename, etc.
+### What & Why
 
-### Add a Column
+`ALTER TABLE` modifies an existing table's **structure** — add columns, change types, rename things, add/drop constraints. This is how you evolve your schema over time without recreating tables.
+
+---
+
+### All Common ALTER Operations
 
 ```sql
-ALTER TABLE experiments
-ADD COLUMN test_accuracy REAL;
+-- ── ADD COLUMN ──────────────────────────────────────────────
+ALTER TABLE users ADD COLUMN phone VARCHAR(20);
+ALTER TABLE users ADD COLUMN last_login TIMESTAMPTZ DEFAULT NOW();
 
-ALTER TABLE ml_models
-ADD COLUMN embedding_dim INTEGER DEFAULT 768;
+-- ── DROP COLUMN ─────────────────────────────────────────────
+ALTER TABLE users DROP COLUMN phone;
+ALTER TABLE users DROP COLUMN IF EXISTS phone;  -- safe, no error if missing
 
-ALTER TABLE chat_history
-ADD COLUMN token_count INTEGER DEFAULT 0;
+-- ── RENAME COLUMN ───────────────────────────────────────────
+ALTER TABLE users RENAME COLUMN username TO display_name;
+
+-- ── CHANGE DATA TYPE ────────────────────────────────────────
+ALTER TABLE products ALTER COLUMN price TYPE NUMERIC(12, 2);
+-- Note: type change fails if existing data can't be cast automatically
+
+-- ── SET / DROP DEFAULT ──────────────────────────────────────
+ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';
+ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;
+
+-- ── SET / DROP NOT NULL ─────────────────────────────────────
+ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
+
+-- ── ADD CONSTRAINT ──────────────────────────────────────────
+ALTER TABLE products ADD CONSTRAINT chk_price CHECK (price >= 0);
+ALTER TABLE users ADD CONSTRAINT uq_email UNIQUE (email);
+ALTER TABLE orders ADD CONSTRAINT fk_user
+    FOREIGN KEY (user_id) REFERENCES users(user_id);
+
+-- ── DROP CONSTRAINT ─────────────────────────────────────────
+ALTER TABLE products DROP CONSTRAINT chk_price;
+ALTER TABLE users DROP CONSTRAINT uq_email;
+
+-- ── RENAME TABLE ────────────────────────────────────────────
+ALTER TABLE users RENAME TO app_users;
 ```
 
-### Drop a Column
+### Real-World Migration Example
 
 ```sql
-ALTER TABLE experiments DROP COLUMN old_metric;
-ALTER TABLE experiments DROP COLUMN IF EXISTS deprecated_field;
-```
+-- Adding vector support to an existing table (common in RAG upgrades)
+CREATE EXTENSION IF NOT EXISTS vector;
 
-### Rename a Column
+ALTER TABLE documents 
+    ADD COLUMN embedding vector(1536),
+    ADD COLUMN embedding_model VARCHAR(100) DEFAULT 'text-embedding-ada-002',
+    ADD COLUMN embedded_at TIMESTAMPTZ;
 
-```sql
-ALTER TABLE experiments RENAME COLUMN val_loss TO validation_loss;
-```
-
-### Change Column Data Type
-
-```sql
-ALTER TABLE experiments
-ALTER COLUMN accuracy TYPE DOUBLE PRECISION;
-
--- With casting
-ALTER TABLE logs
-ALTER COLUMN event_count TYPE BIGINT USING event_count::BIGINT;
-```
-
-### Set / Drop Default
-
-```sql
-ALTER TABLE ml_models ALTER COLUMN framework SET DEFAULT 'pytorch';
-ALTER TABLE ml_models ALTER COLUMN framework DROP DEFAULT;
-```
-
-### Set / Drop NOT NULL
-
-```sql
-ALTER TABLE experiments ALTER COLUMN model_type SET NOT NULL;
-ALTER TABLE experiments ALTER COLUMN description DROP NOT NULL;
-```
-
-### Rename Table
-
-```sql
-ALTER TABLE experiments RENAME TO ml_experiments;
-```
-
-### Add / Drop Constraints
-
-```sql
--- Add constraint
-ALTER TABLE ml_models
-ADD CONSTRAINT chk_accuracy CHECK (accuracy BETWEEN 0 AND 1);
-
--- Drop constraint
-ALTER TABLE ml_models DROP CONSTRAINT chk_accuracy;
-
--- Add FK
-ALTER TABLE predictions
-ADD CONSTRAINT fk_exp FOREIGN KEY (exp_id) REFERENCES experiments(exp_id);
+-- After populating embeddings, add an index
+CREATE INDEX idx_docs_embedding ON documents 
+USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
 ```
 
 ---
 
 ## 9. DROP TABLE
 
-`DROP TABLE` permanently deletes a table and all its data.
+### What & Why
 
-### Basic Syntax
+`DROP TABLE` permanently deletes a table — structure AND all data. It's irreversible (outside a transaction). Use with extreme caution.
+
+---
+
+### Syntax
 
 ```sql
+-- Basic drop
 DROP TABLE table_name;
-DROP TABLE IF EXISTS table_name;            -- safe — no error if not found
-DROP TABLE table_name CASCADE;             -- also drops dependent objects
-DROP TABLE table_name RESTRICT;            -- fail if dependencies exist (default)
+
+-- Safe drop (no error if table doesn't exist)
+DROP TABLE IF EXISTS table_name;
+
+-- Drop multiple tables at once
+DROP TABLE IF EXISTS table1, table2, table3;
+
+-- RESTRICT vs CASCADE
+DROP TABLE experiments;           -- fails if other tables reference this (default)
+DROP TABLE experiments CASCADE;   -- also drops dependent objects (FKs, views, etc.)
+
+-- Drop, but preserve dependent views
+DROP TABLE old_reports RESTRICT;  -- explicit — fails if anything depends on it
 ```
 
-### Examples
+### Production Safety Pattern
 
 ```sql
-DROP TABLE IF EXISTS temp_results;
-
-DROP TABLE predictions CASCADE;     -- also drops views/FKs pointing to it
-```
-
-> ⚠️ `DROP TABLE` is **irreversible** unless inside a transaction block or you have backups.
-
-### Drop Multiple Tables
-
-```sql
-DROP TABLE IF EXISTS table_a, table_b, table_c;
-```
-
-### Safe Pattern (use transactions)
-
-```sql
+-- ALWAYS wrap destructive DDL in a transaction
 BEGIN;
-DROP TABLE old_experiments;
--- verify other things look fine...
-COMMIT;   -- or ROLLBACK; if something looks wrong
+    -- First verify you're dropping the right thing
+    SELECT COUNT(*) FROM old_logs;         -- check: 0 rows expected before dropping
+    DROP TABLE old_logs;
+ROLLBACK;  -- change to COMMIT when you're sure
 ```
 
 ---
 
 ## 10. CHECK Constraint
 
-`CHECK` enforces a custom boolean expression on a column or table. If the expression is `FALSE`, the insert/update is rejected.
+### What & Why
 
-### Column-Level CHECK
+`CHECK` lets you define **custom validation rules** directly in the table schema. The database enforces the rule on every INSERT and UPDATE, so invalid data can never enter.
+
+---
+
+### Syntax & Examples
 
 ```sql
-CREATE TABLE model_metrics (
-    model_id  INTEGER,
-    accuracy  REAL CHECK (accuracy BETWEEN 0.0 AND 1.0),
-    f1_score  REAL CHECK (f1_score >= 0),
-    loss      REAL CHECK (loss > 0),
-    split     TEXT CHECK (split IN ('train', 'val', 'test'))
+-- Inline CHECK
+CREATE TABLE employees (
+    emp_id      SERIAL PRIMARY KEY,
+    name        VARCHAR(100) NOT NULL,
+    salary      DECIMAL(10,2) CHECK (salary > 0),
+    age         INTEGER CHECK (age BETWEEN 18 AND 100),
+    department  VARCHAR(50)  CHECK (department IN ('eng', 'data', 'product', 'sales'))
 );
-```
 
-### Named CHECK Constraint
-
-```sql
-CREATE TABLE training_runs (
-    run_id     SERIAL PRIMARY KEY,
-    epochs     INTEGER,
-    batch_size INTEGER,
-    CONSTRAINT chk_epochs     CHECK (epochs > 0 AND epochs <= 10000),
-    CONSTRAINT chk_batch      CHECK (batch_size IN (8, 16, 32, 64, 128, 256)),
-    CONSTRAINT chk_dates      CHECK (end_time > start_time)
+-- Named CHECK (recommended — descriptive error messages)
+CREATE TABLE model_evaluations (
+    eval_id     SERIAL PRIMARY KEY,
+    model_id    INTEGER NOT NULL,
+    accuracy    DECIMAL(5,4),
+    precision_  DECIMAL(5,4),
+    recall      DECIMAL(5,4),
+    f1_score    DECIMAL(5,4),
+    
+    CONSTRAINT chk_accuracy  CHECK (accuracy  BETWEEN 0 AND 1),
+    CONSTRAINT chk_precision CHECK (precision_ BETWEEN 0 AND 1),
+    CONSTRAINT chk_recall    CHECK (recall     BETWEEN 0 AND 1),
+    CONSTRAINT chk_f1        CHECK (f1_score   BETWEEN 0 AND 1)
 );
+
+-- Multi-column CHECK
+CREATE TABLE date_ranges (
+    id          SERIAL PRIMARY KEY,
+    start_date  DATE NOT NULL,
+    end_date    DATE NOT NULL,
+    
+    CONSTRAINT chk_date_order CHECK (end_date >= start_date)
+);
+
+-- Add CHECK to existing table
+ALTER TABLE employees 
+ADD CONSTRAINT chk_email_format CHECK (email LIKE '%@%.%');
 ```
 
-### Adding CHECK to Existing Table
+**⚠️ Important:** CHECK constraints with NULL — if any column in the check is NULL, the constraint is considered **satisfied** (not violated). NULL means "unknown", so the check can't determine it's false.
 
 ```sql
-ALTER TABLE experiments
-ADD CONSTRAINT chk_status
-CHECK (status IN ('queued', 'running', 'completed', 'failed'));
-```
-
-### CHECK with NOT VALID (skip existing rows)
-
-```sql
--- Add constraint without checking existing rows (safe for large tables)
-ALTER TABLE predictions
-ADD CONSTRAINT chk_score CHECK (score BETWEEN 0 AND 1)
-NOT VALID;
-
--- Then validate separately
-ALTER TABLE predictions VALIDATE CONSTRAINT chk_score;
+-- This INSERT succeeds even with CHECK (age >= 18)
+INSERT INTO employees (name, salary) VALUES ('Bob', 50000);
+-- age is NULL → check is skipped → insert succeeds
 ```
 
 ---
 
 ## 11. Conditional Expressions & Procedures
 
-PostgreSQL has several **conditional expressions** that let you add logic directly inside SQL queries — no Python required.
+### What & Why
 
-| Expression | Purpose |
-|------------|---------|
-| `CASE` | If-elif-else logic in SQL |
-| `COALESCE` | Return first non-NULL value |
-| `NULLIF` | Return NULL if two values are equal |
-| `CAST` | Convert data type |
-| `GREATEST` / `LEAST` | Max / min across values |
+Conditional expressions let you add **if-then-else logic inside SQL queries** — without needing application code. Procedures let you store and execute **blocks of SQL logic** on the server.
+
+---
+
+### PL/pgSQL Basics (Stored Procedures & Functions)
+
+```sql
+-- CREATE FUNCTION: returns a value
+CREATE OR REPLACE FUNCTION get_model_grade(accuracy DECIMAL)
+RETURNS VARCHAR AS $$
+BEGIN
+    IF accuracy >= 0.95 THEN RETURN 'A';
+    ELSIF accuracy >= 0.90 THEN RETURN 'B';
+    ELSIF accuracy >= 0.80 THEN RETURN 'C';
+    ELSE RETURN 'F';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Usage
+SELECT model_name, accuracy, get_model_grade(accuracy) AS grade
+FROM model_evaluations;
+
+-- CREATE PROCEDURE: executes logic, no return value
+CREATE OR REPLACE PROCEDURE archive_old_runs(days_old INTEGER)
+LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO runs_archive SELECT * FROM runs
+    WHERE start_time < NOW() - (days_old || ' days')::INTERVAL;
+    
+    DELETE FROM runs
+    WHERE start_time < NOW() - (days_old || ' days')::INTERVAL;
+    
+    RAISE NOTICE 'Archived runs older than % days', days_old;
+END;
+$$;
+
+-- Call the procedure
+CALL archive_old_runs(90);
+```
 
 ---
 
 ## 12. CASE
 
-`CASE` is SQL's if-else. It returns different values based on conditions.
+### What & Why
 
-### Simple CASE (equality checks)
+`CASE` is SQL's **if-else expression**. It evaluates conditions and returns a value. You can use it anywhere an expression is valid — SELECT, WHERE, ORDER BY, and even inside aggregations.
+
+---
+
+### Two Forms of CASE
 
 ```sql
-SELECT
+-- ── FORM 1: Searched CASE (most flexible) ───────────────────
+SELECT 
     model_name,
-    CASE framework
-        WHEN 'pytorch'     THEN 'PyTorch 🔥'
-        WHEN 'tensorflow'  THEN 'TensorFlow 🌊'
-        WHEN 'jax'         THEN 'JAX ⚡'
-        ELSE 'Unknown'
-    END AS framework_label
-FROM ml_models;
-```
-
-### Searched CASE (range/condition checks)
-
-```sql
-SELECT
-    exp_id,
     accuracy,
     CASE
         WHEN accuracy >= 0.95 THEN 'Excellent'
         WHEN accuracy >= 0.90 THEN 'Good'
-        WHEN accuracy >= 0.80 THEN 'Acceptable'
-        WHEN accuracy >= 0.70 THEN 'Poor'
-        ELSE 'Failing'
+        WHEN accuracy >= 0.80 THEN 'Fair'
+        ELSE 'Poor'
     END AS performance_grade
-FROM experiments
-WHERE status = 'completed';
+FROM model_evaluations;
+
+-- ── FORM 2: Simple CASE (equality check) ────────────────────
+SELECT 
+    order_id,
+    CASE status
+        WHEN 'pending'    THEN '⏳ Waiting'
+        WHEN 'shipped'    THEN '🚚 On the way'
+        WHEN 'delivered'  THEN '✅ Done'
+        WHEN 'cancelled'  THEN '❌ Cancelled'
+        ELSE '❓ Unknown'
+    END AS status_display
+FROM orders;
 ```
 
-### CASE in ORDER BY
+### Advanced CASE Patterns
 
 ```sql
--- Prioritize 'completed' experiments first
-SELECT * FROM experiments
+-- CASE inside COUNT (conditional aggregation)
+SELECT
+    experiment_name,
+    COUNT(*) AS total_runs,
+    COUNT(CASE WHEN status = 'completed' THEN 1 END) AS completed,
+    COUNT(CASE WHEN status = 'failed'    THEN 1 END) AS failed,
+    ROUND(
+        COUNT(CASE WHEN status = 'completed' THEN 1 END)::DECIMAL
+        / COUNT(*) * 100, 2
+    ) AS success_rate_pct
+FROM runs r
+JOIN experiments e ON r.exp_id = e.exp_id
+GROUP BY experiment_name;
+
+-- CASE in ORDER BY
+SELECT model_name, status
+FROM deployments
 ORDER BY
     CASE status
-        WHEN 'completed' THEN 1
-        WHEN 'running'   THEN 2
-        WHEN 'failed'    THEN 3
-        ELSE 4
+        WHEN 'critical' THEN 1
+        WHEN 'warning'  THEN 2
+        WHEN 'healthy'  THEN 3
     END;
+
+-- CASE for data transformation (ML feature engineering in SQL)
+SELECT 
+    user_id,
+    CASE WHEN age < 18             THEN 'teen'
+         WHEN age BETWEEN 18 AND 35 THEN 'young_adult'
+         WHEN age BETWEEN 36 AND 60 THEN 'adult'
+         ELSE 'senior'
+    END AS age_group,
+    CASE WHEN total_purchases > 1000 THEN 1 ELSE 0 END AS high_value_flag
+FROM user_profiles;
 ```
-
-### CASE in UPDATE
-
-```sql
-UPDATE experiments
-SET priority =
-    CASE
-        WHEN accuracy > 0.95 THEN 'high'
-        WHEN accuracy > 0.85 THEN 'medium'
-        ELSE 'low'
-    END
-WHERE status = 'completed';
-```
-
-### CASE in Aggregation
-
-```sql
--- Count experiments by performance category
-SELECT
-    COUNT(*) AS total,
-    COUNT(CASE WHEN accuracy >= 0.90 THEN 1 END) AS high_accuracy,
-    COUNT(CASE WHEN accuracy < 0.70  THEN 1 END) AS poor_accuracy,
-    SUM(CASE WHEN framework = 'pytorch' THEN 1 ELSE 0 END) AS pytorch_count
-FROM experiments;
-```
-
-> **ML note:** Use CASE in SELECT for feature engineering directly in SQL — e.g., bucketing continuous values into categorical bins.
 
 ---
 
 ## 13. COALESCE
 
-`COALESCE(val1, val2, ..., valN)` returns the **first non-NULL value** in the list.
+### What & Why
 
-### Basic Usage
+`COALESCE(val1, val2, ..., valN)` returns the **first non-NULL value** from its arguments. It's the standard way to handle NULLs — replace them with a fallback value.
+
+---
+
+### Syntax & Examples
 
 ```sql
+-- Basic: replace NULL with a default
+SELECT 
+    user_id,
+    COALESCE(display_name, username, 'Anonymous') AS shown_name
+FROM users;
+-- If display_name is NULL, use username. If that's also NULL, use 'Anonymous'.
+
+-- Replace NULL numbers with 0
+SELECT 
+    product_id,
+    COALESCE(discount_price, regular_price) AS final_price,
+    COALESCE(review_count, 0) AS reviews
+FROM products;
+
+-- Real ML use case: fill missing metric values
 SELECT
-    model_name,
-    COALESCE(accuracy, val_accuracy, 0.0) AS best_accuracy
-FROM experiments;
-```
+    run_id,
+    COALESCE(metrics->>'accuracy', '0') AS accuracy,
+    COALESCE(metrics->>'f1_score', 'N/A') AS f1
+FROM runs;
 
-### Replacing NULLs with Defaults
+-- COALESCE vs CASE (equivalent, COALESCE is cleaner for NULL replacement)
+-- These are identical:
+SELECT COALESCE(phone, 'No phone') FROM users;
+SELECT CASE WHEN phone IS NULL THEN 'No phone' ELSE phone END FROM users;
 
-```sql
+-- Use in aggregations: treat NULLs as 0
+SELECT AVG(COALESCE(score, 0)) AS avg_score FROM assessments;
+
+-- Multiple fallbacks — great for default configurations
 SELECT
     exp_id,
-    COALESCE(description, 'No description provided') AS description,
-    COALESCE(tags, ARRAY['untagged'])                  AS tags,
-    COALESCE(finished_at, NOW())                       AS effective_end
+    COALESCE(
+        custom_config->>'max_epochs',   -- user setting
+        default_config->>'max_epochs',  -- project default
+        '100'                           -- hardcoded fallback
+    )::INTEGER AS max_epochs
 FROM experiments;
 ```
-
-### COALESCE in WHERE
-
-```sql
--- Treat NULL scores as 0 for comparison
-SELECT * FROM predictions
-WHERE COALESCE(score, 0) > 0.5;
-```
-
-### Multiple Fallback Sources
-
-```sql
--- First try manual_label, then predicted_label, then 'unknown'
-SELECT
-    row_id,
-    COALESCE(manual_label, predicted_label, 'unknown') AS final_label
-FROM dataset_rows;
-```
-
-> **AI note:** Essential when building data pipelines — raw data always has NULLs. Always COALESCE before feeding features to a model.
 
 ---
 
 ## 14. CAST
 
-`CAST` converts a value from one data type to another.
+### What & Why
 
-### Syntax Options
+`CAST` converts a value from one data type to another. SQL requires **type compatibility** — you can't compare a TEXT `'42'` to an INTEGER `42` without converting one of them.
+
+---
+
+### Two Syntax Forms
 
 ```sql
+-- Standard SQL syntax
 CAST(value AS target_type)
-value::target_type          -- PostgreSQL shorthand (preferred)
+
+-- PostgreSQL shorthand (preferred in practice)
+value::target_type
 ```
+
+---
 
 ### Common Conversions
 
 ```sql
--- String to number
-SELECT '42'::INTEGER;
-SELECT '3.14'::REAL;
-SELECT '99.99'::NUMERIC(10,2);
+-- Text → Number
+SELECT CAST('42' AS INTEGER);           -- standard
+SELECT '42'::INTEGER;                   -- shorthand
+SELECT '3.14'::DECIMAL(10, 2);
 
--- Number to string
+-- Number → Text
 SELECT 42::TEXT;
-SELECT 3.14::VARCHAR(10);
+SELECT TO_CHAR(3.14159, 'FM9999.99');  -- formatted conversion
 
--- String to date/time
+-- Text → Date/Timestamp
 SELECT '2024-01-15'::DATE;
 SELECT '2024-01-15 09:30:00'::TIMESTAMP;
-SELECT '2024-01-15 09:30:00+05:30'::TIMESTAMPTZ;
+SELECT TO_TIMESTAMP('15/01/2024', 'DD/MM/YYYY');  -- with format
 
--- To boolean
-SELECT 'true'::BOOLEAN;
-SELECT 1::BOOLEAN;      -- TRUE
-SELECT 0::BOOLEAN;      -- FALSE
+-- Timestamp → Date (drop the time part)
+SELECT NOW()::DATE;
 
--- To JSON
-SELECT '{"key": "value"}'::JSONB;
+-- Integer → Boolean
+SELECT 1::BOOLEAN;   -- TRUE
+SELECT 0::BOOLEAN;   -- FALSE
 
--- Array to text
-SELECT ARRAY[1,2,3]::TEXT;    -- '{1,2,3}'
+-- JSON extraction needs casting
+SELECT (metrics->>'accuracy')::DECIMAL(5,4) FROM runs;
+-- metrics->>'accuracy' returns TEXT '0.9342'
+-- ::DECIMAL converts it to 0.9342 for math operations
+
+-- Array to string and back
+SELECT ARRAY[1,2,3]::TEXT;           -- '{1,2,3}'
+SELECT '{1,2,3}'::INTEGER[];         -- ARRAY[1,2,3]
+
+-- Real-world: compare a JSONB field numerically
+SELECT run_id
+FROM runs
+WHERE (metrics->>'accuracy')::FLOAT > 0.90  -- CAST needed here
+ORDER BY (metrics->>'accuracy')::FLOAT DESC;
 ```
 
-### CAST in Queries
+**⚠️ CAST Failures:** If the value can't be converted, PostgreSQL throws an error. Use `TRY` patterns or validate first:
 
 ```sql
--- Calculate percentage (integer division pitfall!)
-SELECT
-    correct_predictions,
-    total_predictions,
-    -- Without CAST: integer / integer = integer!
-    correct_predictions / total_predictions                     AS wrong_pct,
-    -- With CAST: float division
-    CAST(correct_predictions AS REAL) / total_predictions       AS accuracy,
-    correct_predictions::REAL / total_predictions               AS accuracy_v2
-FROM model_results;
-```
-
-### CAST for Type Matching
-
-```sql
--- Comparing text ID to integer FK
-SELECT * FROM experiments
-WHERE exp_id = '42'::INTEGER;
-
--- Aggregating mixed types
-SELECT AVG(score::NUMERIC) FROM raw_predictions;
-```
-
-### Safe CAST (no error on failure)
-
-```sql
--- Returns NULL instead of error if cast fails
-SELECT CASE
-    WHEN value ~ '^\d+$' THEN value::INTEGER
-    ELSE NULL
-END AS safe_int
-FROM raw_import;
+-- Safe cast pattern using CASE
+SELECT 
+    value_text,
+    CASE 
+        WHEN value_text ~ '^\d+(\.\d+)?$'  -- regex check: is it numeric?
+        THEN value_text::DECIMAL
+        ELSE NULL
+    END AS safe_numeric
+FROM raw_import_data;
 ```
 
 ---
 
 ## 15. NULLIF
 
-`NULLIF(val1, val2)` returns `NULL` if `val1 = val2`, otherwise returns `val1`.
+### What & Why
 
-Think of it as the **inverse of COALESCE** — it *creates* NULL from a sentinel value.
+`NULLIF(val1, val2)` returns **NULL if val1 equals val2**, otherwise returns val1. Its primary use is **preventing division-by-zero errors** and turning "sentinel" values (like `0` or `''`) back into proper NULLs.
 
-### Basic Usage
+---
 
-```sql
-SELECT NULLIF(10, 10);    -- returns NULL
-SELECT NULLIF(10, 20);    -- returns 10
-SELECT NULLIF('', '');    -- returns NULL (empty string → NULL)
-```
-
-### Preventing Division by Zero
+### Syntax & Examples
 
 ```sql
--- Without NULLIF: ERROR: division by zero
-SELECT total_correct / total_predictions FROM results;
+-- Prevent division by zero
+SELECT 
+    product_id,
+    total_revenue / NULLIF(total_units_sold, 0) AS avg_revenue_per_unit
+    -- If total_units_sold = 0, NULLIF returns NULL → division returns NULL (not error)
+FROM sales;
 
--- With NULLIF: returns NULL instead of crashing
+-- Turn empty strings into NULL (common after CSV imports)
+SELECT NULLIF(TRIM(phone_number), '') AS clean_phone FROM contacts;
+-- '' → NULL, '  ' → NULL, '555-1234' → '555-1234'
+
+-- Combined with COALESCE
+SELECT 
+    COALESCE(NULLIF(TRIM(email), ''), 'no-email@placeholder.com') AS email
+FROM raw_users;
+-- Step 1: NULLIF turns '' → NULL
+-- Step 2: COALESCE turns NULL → 'no-email@placeholder.com'
+
+-- Calculate accuracy rate safely
 SELECT
-    total_correct * 1.0 / NULLIF(total_predictions, 0) AS accuracy
-FROM results;
+    model_id,
+    ROUND(
+        correct_predictions::DECIMAL 
+        / NULLIF(total_predictions, 0) * 100, 2
+    ) AS accuracy_pct
+FROM model_results;
 ```
-
-### Treating Empty Strings as NULL
-
-```sql
--- Empty strings from CSV imports treated as real NULL
-SELECT
-    NULLIF(TRIM(model_notes), '')  AS model_notes,
-    NULLIF(error_message, 'N/A')   AS error_message
-FROM experiment_logs;
-```
-
-### NULLIF + COALESCE Combination
-
-```sql
--- Replace empty/zero values with defaults
-SELECT
-    COALESCE(NULLIF(accuracy, 0), -1)         AS accuracy_or_minus1,
-    COALESCE(NULLIF(TRIM(notes), ''), 'N/A')  AS clean_notes
-FROM experiments;
-```
-
-> **Data pipeline note:** `NULLIF` is essential when importing messy CSVs where missing values come in as `''`, `'N/A'`, `'NULL'`, `0`, etc.
 
 ---
 
 ## 16. Views
 
-A **View** is a saved SQL query that behaves like a virtual table. It doesn't store data — it runs the underlying query each time you SELECT from it.
+### What & Why
 
-### Why Use Views?
+A **View** is a **named, saved SQL query** that behaves like a virtual table. When you query a view, PostgreSQL runs the underlying query and returns the results. Views don't store data themselves (unless materialized).
 
-- **Simplify** complex queries into reusable names
-- **Security** — expose only specific columns/rows to users
-- **Abstraction** — hide table structure changes from apps
-- **Reporting** — pre-define commonly needed reports
+**Why use views?**
+- **Simplify complex queries** — wrap a 20-join query into a single clean name
+- **Security** — grant access to a view but not the underlying tables
+- **Abstraction** — change the underlying query without changing how apps use it
+- **Reusability** — write once, use everywhere
 
-### CREATE VIEW
+---
 
-```sql
-CREATE VIEW view_name AS
-SELECT ...;
-```
-
-### Simple View
+### Regular Views
 
 ```sql
-CREATE VIEW completed_experiments AS
-SELECT
-    e.exp_id,
-    d.full_name AS scientist,
-    e.model_type,
-    e.accuracy,
-    e.finished_at
-FROM experiments e
-JOIN data_scientists d ON e.ds_id = d.ds_id
-WHERE e.status = 'completed'
-ORDER BY e.accuracy DESC;
+-- Create a view
+CREATE VIEW active_model_deployments AS
+SELECT 
+    m.model_id,
+    m.model_name,
+    m.version,
+    d.deployed_at,
+    d.environment,
+    d.endpoint_url
+FROM models m
+JOIN deployments d ON m.model_id = d.model_id
+WHERE d.is_active = TRUE
+  AND d.health_status = 'healthy';
 
 -- Use it like a table
-SELECT * FROM completed_experiments WHERE accuracy > 0.95;
+SELECT * FROM active_model_deployments WHERE environment = 'production';
+SELECT COUNT(*) FROM active_model_deployments;
+
+-- Replace/update a view
+CREATE OR REPLACE VIEW active_model_deployments AS
+SELECT ... ;  -- new query here
+
+-- Drop a view
+DROP VIEW IF EXISTS active_model_deployments;
+DROP VIEW IF EXISTS active_model_deployments CASCADE;  -- also drops dependent views
 ```
 
-### View for AI Chat History
+### Materialized Views (Very Important for ML/Analytics)
+
+A **Materialized View** actually **stores the query results on disk**. Much faster to query, but needs manual refresh when data changes.
 
 ```sql
-CREATE VIEW recent_conversations AS
+-- Create a materialized view
+CREATE MATERIALIZED VIEW experiment_summary AS
 SELECT
-    session_id,
-    role,
-    content,
-    token_count,
-    created_at,
-    ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at) AS turn_number
-FROM chat_history
-WHERE created_at > NOW() - INTERVAL '7 days';
-```
+    e.exp_id,
+    e.name AS experiment_name,
+    COUNT(r.run_id) AS total_runs,
+    COUNT(CASE WHEN r.status = 'completed' THEN 1 END) AS completed_runs,
+    MAX((r.metrics->>'accuracy')::FLOAT) AS best_accuracy,
+    AVG((r.metrics->>'accuracy')::FLOAT) AS avg_accuracy
+FROM experiments e
+LEFT JOIN runs r ON e.exp_id = r.exp_id
+GROUP BY e.exp_id, e.name
+WITH DATA;  -- populate immediately
 
-### CREATE OR REPLACE VIEW
-
-```sql
-CREATE OR REPLACE VIEW model_leaderboard AS
-SELECT
-    model_name,
-    framework,
-    MAX(accuracy)   AS best_accuracy,
-    AVG(accuracy)   AS avg_accuracy,
-    COUNT(*)        AS num_runs
-FROM experiments
-WHERE status = 'completed'
-GROUP BY model_name, framework
-ORDER BY best_accuracy DESC;
-```
-
-### Materialized View (stores results — faster but needs refresh)
-
-```sql
--- Creates a physical snapshot of the query result
-CREATE MATERIALIZED VIEW mv_model_stats AS
-SELECT
-    model_type,
-    COUNT(*)         AS total_runs,
-    AVG(accuracy)    AS avg_accuracy,
-    MAX(accuracy)    AS best_accuracy
-FROM experiments
-GROUP BY model_type;
+-- Query it (blazing fast — reads stored results)
+SELECT * FROM experiment_summary ORDER BY best_accuracy DESC;
 
 -- Refresh when underlying data changes
-REFRESH MATERIALIZED VIEW mv_model_stats;
+REFRESH MATERIALIZED VIEW experiment_summary;
 
--- Refresh without locking reads
-REFRESH MATERIALIZED VIEW CONCURRENTLY mv_model_stats;
+-- Refresh without locking (allows reads during refresh — production-safe)
+REFRESH MATERIALIZED VIEW CONCURRENTLY experiment_summary;
+-- Note: requires a UNIQUE index on the materialized view
+
+-- Add index to materialized view
+CREATE UNIQUE INDEX idx_exp_summary_id ON experiment_summary(exp_id);
 ```
 
-> **ML note:** Use Materialized Views for pre-computing expensive aggregations (e.g., daily model performance summaries) that you query often.
+### View vs Materialized View
 
-### Dropping Views
-
-```sql
-DROP VIEW IF EXISTS completed_experiments;
-DROP MATERIALIZED VIEW IF EXISTS mv_model_stats;
-```
+| Feature | View | Materialized View |
+|---------|------|------------------|
+| Stores data | No | Yes |
+| Query speed | Runs query each time | Reads stored results |
+| Always fresh | Yes | Only after REFRESH |
+| Use case | Simple abstraction | Heavy analytics, dashboards |
 
 ---
 
 ## 17. Import & Export
 
-### Export (COPY TO)
+### What & Why
+
+Real-world data lives in CSV files, JSON dumps, and external databases. PostgreSQL provides tools to import and export data efficiently — essential for loading ML datasets, sharing data, and ETL pipelines.
+
+---
+
+### COPY Command (Server-Side — Fastest)
 
 ```sql
--- Export full table to CSV
-COPY experiments TO '/tmp/experiments.csv' WITH (FORMAT CSV, HEADER TRUE);
+-- Export to CSV (runs on the database server)
+COPY users TO '/tmp/users_export.csv' 
+    WITH (FORMAT CSV, HEADER TRUE, DELIMITER ',');
 
--- Export query result to CSV
+-- Import from CSV
+COPY users (first_name, last_name, email, age) 
+FROM '/tmp/users_import.csv' 
+WITH (FORMAT CSV, HEADER TRUE, DELIMITER ',');
+
+-- Export only specific rows
 COPY (
-    SELECT exp_id, model_type, accuracy
-    FROM experiments
-    WHERE status = 'completed'
-) TO '/tmp/good_experiments.csv' WITH (FORMAT CSV, HEADER TRUE);
+    SELECT user_id, email, created_at 
+    FROM users 
+    WHERE created_at > '2024-01-01'
+) TO '/tmp/new_users.csv' WITH (FORMAT CSV, HEADER);
 
--- Export as TSV (tab-separated)
-COPY experiments TO '/tmp/experiments.tsv' WITH (FORMAT CSV, HEADER TRUE, DELIMITER E'\t');
+-- Handle NULLs in CSV
+COPY products FROM '/tmp/products.csv'
+WITH (FORMAT CSV, HEADER, NULL 'N/A', DELIMITER ',');
 ```
 
-### Import (COPY FROM)
+### \copy Command (Client-Side — psql)
 
 ```sql
--- Import CSV into table (table must exist with matching columns)
-COPY experiments (model_type, accuracy, status)
-FROM '/tmp/new_experiments.csv'
-WITH (FORMAT CSV, HEADER TRUE);
-
--- Handle NULL values in CSV
-COPY raw_data FROM '/tmp/data.csv'
-WITH (FORMAT CSV, HEADER TRUE, NULL 'NA');
+-- \copy runs on YOUR machine (the client), not the server
+-- Use this when you don't have server filesystem access
+\copy users TO '~/users.csv' WITH CSV HEADER
+\copy users FROM '~/new_users.csv' WITH CSV HEADER
 ```
 
-### Using `\copy` in psql (client-side, no superuser needed)
-
-```sql
-\copy experiments TO '~/experiments.csv' CSV HEADER;
-\copy experiments FROM '~/experiments.csv' CSV HEADER;
-```
-
-### Import via Python (pandas + psycopg2)
+### Python + pandas Export/Import
 
 ```python
 import pandas as pd
@@ -1189,711 +1346,529 @@ from sqlalchemy import create_engine
 
 engine = create_engine('postgresql://user:pass@localhost:5432/mydb')
 
-df = pd.read_csv('experiments.csv')
-df.to_sql('experiments', engine, if_exists='append', index=False)
+# Export table to DataFrame
+df = pd.read_sql('SELECT * FROM model_evaluations', engine)
+df.to_csv('evaluations.csv', index=False)
 
-# Read from DB into DataFrame
-df = pd.read_sql('SELECT * FROM experiments WHERE accuracy > 0.9', engine)
+# Import DataFrame to table
+df = pd.read_csv('new_evaluations.csv')
+df.to_sql('model_evaluations', engine, if_exists='append', index=False)
+
+# Fast bulk insert with COPY
+from io import StringIO
+def copy_from_df(df, table, conn):
+    buffer = StringIO()
+    df.to_csv(buffer, index=False, header=False)
+    buffer.seek(0)
+    cursor = conn.cursor()
+    cursor.copy_from(buffer, table, sep=',', null='')
+    conn.commit()
 ```
 
 ---
 
 ## 18. Python + PostgreSQL (psycopg2)
 
-`psycopg2` is the most popular Python library for connecting to PostgreSQL. It's the backbone of ML data pipelines.
+### What & Why
 
-### Installation
+**psycopg2** is the most popular Python library for connecting to PostgreSQL. It lets you execute SQL queries, fetch results, and manage transactions from Python code — essential for ML pipelines, data ingestion, and AI applications.
 
-```bash
-pip install psycopg2-binary
-# or for production (compiled):
-pip install psycopg2
-```
+---
 
-### Basic Connection
+### Installation & Basic Connection
 
 ```python
-import psycopg2
+pip install psycopg2-binary  # easier install, includes C extensions
+# or: pip install psycopg2   # compile from source
 
+import psycopg2
+import psycopg2.extras  # for RealDictCursor, execute_values, etc.
+
+# Connect to database
 conn = psycopg2.connect(
-    host     = "localhost",
-    port     = 5432,
-    database = "ml_platform",
-    user     = "postgres",
-    password = "yourpassword"
+    host="localhost",
+    port=5432,
+    database="mydb",
+    user="postgres",
+    password="your_password"
 )
+
+# Or via connection string (URL format)
+conn = psycopg2.connect("postgresql://postgres:password@localhost:5432/mydb")
 
 cursor = conn.cursor()
 ```
 
-### Using Environment Variables (best practice)
+---
+
+### Basic CRUD Operations
 
 ```python
-import os
-import psycopg2
-
-conn = psycopg2.connect(os.environ['DATABASE_URL'])
-# DATABASE_URL = "postgresql://user:pass@host:5432/dbname"
-```
-
-### SELECT Query
-
-```python
-cursor.execute("SELECT exp_id, model_type, accuracy FROM experiments WHERE accuracy > %s", (0.9,))
-rows = cursor.fetchall()
-
-for row in rows:
-    print(f"ID: {row[0]}, Model: {row[1]}, Accuracy: {row[2]:.4f}")
-
-# Fetch one
-row = cursor.fetchone()
-
-# Fetch as dict (using RealDictCursor)
-from psycopg2.extras import RealDictCursor
-cursor = conn.cursor(cursor_factory=RealDictCursor)
-cursor.execute("SELECT * FROM experiments LIMIT 5")
-rows = cursor.fetchall()   # list of dict-like rows
-print(rows[0]['model_type'])
-```
-
-### INSERT with Parameters
-
-```python
-# ✅ Always use parameterized queries — NEVER f-strings (SQL injection risk!)
-cursor.execute("""
-    INSERT INTO experiments (model_type, hyperparams, accuracy, status)
-    VALUES (%s, %s, %s, %s)
-    RETURNING exp_id
-""", ('transformer', '{"lr": 0.0001}', 0.945, 'completed'))
-
-exp_id = cursor.fetchone()[0]
+# ── CREATE ────────────────────────────────────────────────────
+cursor.execute(
+    "INSERT INTO users (name, email) VALUES (%s, %s) RETURNING user_id",
+    ("Alice", "alice@example.com")    # ALWAYS use parameterized queries!
+)
+new_id = cursor.fetchone()[0]
 conn.commit()
-print(f"Inserted experiment: {exp_id}")
-```
 
-### UPDATE and DELETE
+# ── READ ──────────────────────────────────────────────────────
+cursor.execute("SELECT * FROM users WHERE age > %s", (25,))
+rows = cursor.fetchall()     # list of tuples
+row  = cursor.fetchone()     # single tuple
+many = cursor.fetchmany(10)  # first 10 results
 
-```python
-cursor.execute("""
-    UPDATE experiments
-    SET status = %s, finished_at = NOW()
-    WHERE exp_id = %s
-""", ('completed', 42))
+# Use RealDictCursor for dict-like access
+dict_cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+dict_cursor.execute("SELECT * FROM users WHERE user_id = %s", (1,))
+user = dict_cursor.fetchone()
+print(user['email'])  # dict access instead of user[1]
 
-cursor.execute("DELETE FROM predictions WHERE score < %s", (0.1,))
+# ── UPDATE ────────────────────────────────────────────────────
+cursor.execute(
+    "UPDATE users SET email = %s WHERE user_id = %s",
+    ("new@email.com", 1)
+)
+conn.commit()
+
+# ── DELETE ────────────────────────────────────────────────────
+cursor.execute("DELETE FROM sessions WHERE expires_at < NOW()")
+print(f"Deleted {cursor.rowcount} expired sessions")
 conn.commit()
 ```
 
-### Bulk Insert (executemany)
+---
+
+### Batch Operations (For ML Data Pipelines)
 
 ```python
+from psycopg2.extras import execute_values, execute_batch
+
+# execute_values — fastest for bulk inserts
 records = [
-    ('bert', 0.91, 'completed'),
-    ('gpt2', 0.88, 'completed'),
-    ('t5',   0.93, 'completed'),
+    (1, 'doc1', [0.1, 0.2, 0.3]),
+    (2, 'doc2', [0.4, 0.5, 0.6]),
+    # ... thousands more
 ]
-cursor.executemany("""
-    INSERT INTO experiments (model_type, accuracy, status)
-    VALUES (%s, %s, %s)
-""", records)
+execute_values(
+    cursor,
+    "INSERT INTO document_embeddings (doc_id, content, embedding) VALUES %s",
+    records
+)
+conn.commit()
+
+# execute_batch — runs many statements efficiently
+updates = [(0.95, 'run_001'), (0.87, 'run_002')]
+execute_batch(
+    cursor,
+    "UPDATE runs SET accuracy = %s WHERE run_id = %s",
+    updates,
+    page_size=1000   # process 1000 at a time
+)
 conn.commit()
 ```
 
-### Bulk Insert (execute_values — much faster)
+---
+
+### Context Manager (Best Practice)
 
 ```python
-from psycopg2.extras import execute_values
-
-records = [(f'model_{i}', 0.85 + i*0.01, 'completed') for i in range(1000)]
-
-execute_values(cursor, """
-    INSERT INTO experiments (model_type, accuracy, status)
-    VALUES %s
-""", records)
-conn.commit()
+# Use context managers for safe transaction handling
+with psycopg2.connect("postgresql://...") as conn:
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO logs (event) VALUES (%s)", ("model_loaded",))
+    # conn.commit() is called automatically when the `with` block exits
+    # conn.rollback() is called automatically if an exception occurs
 ```
 
-### Transaction Management
+---
 
-```python
-try:
-    cursor.execute("INSERT INTO experiments ...")
-    cursor.execute("UPDATE model_registry ...")
-    conn.commit()           # all or nothing
-except Exception as e:
-    conn.rollback()         # undo everything on error
-    print(f"Transaction failed: {e}")
-finally:
-    cursor.close()
-    conn.close()
-```
-
-### Context Manager Pattern (recommended)
-
-```python
-with psycopg2.connect(os.environ['DATABASE_URL']) as conn:
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT * FROM experiments LIMIT 10")
-        rows = cursor.fetchall()
-# Connection and cursor auto-closed + committed
-```
-
-### Connection Pooling (production)
+### Connection Pooling (Production Must-Have)
 
 ```python
 from psycopg2 import pool
 
-# Create pool once at app startup
-connection_pool = pool.SimpleConnectionPool(
-    minconn=1,
+# Create a connection pool (don't open/close connections for every query)
+connection_pool = pool.ThreadedConnectionPool(
+    minconn=2,
     maxconn=20,
-    dsn=os.environ['DATABASE_URL']
+    host="localhost",
+    database="mydb",
+    user="postgres",
+    password="password"
 )
 
-def get_conn():
-    return connection_pool.getconn()
-
-def release_conn(conn):
-    connection_pool.putconn(conn)
-```
-
-### JSON / JSONB with psycopg2
-
-```python
-import json
-from psycopg2.extras import Json
-
-hyperparams = {"lr": 0.001, "epochs": 50, "batch_size": 32, "optimizer": "adam"}
-
-cursor.execute("""
-    INSERT INTO experiments (model_type, hyperparams)
-    VALUES (%s, %s)
-""", ('transformer', Json(hyperparams)))
-conn.commit()
-
-# Read back
-cursor.execute("SELECT hyperparams FROM experiments WHERE exp_id = %s", (1,))
-row = cursor.fetchone()
-params = row[0]   # automatically parsed as Python dict
-print(params['lr'])   # 0.001
-```
-
-### Using SQLAlchemy (ORM layer over psycopg2)
-
-```python
-from sqlalchemy import create_engine, text
-import pandas as pd
-
-engine = create_engine('postgresql+psycopg2://user:pass@localhost/mldb')
-
-# Execute raw SQL
-with engine.connect() as conn:
-    result = conn.execute(text("SELECT * FROM experiments WHERE accuracy > :acc"), {"acc": 0.9})
-    rows = result.fetchall()
-
-# Pandas integration
-df = pd.read_sql_query("SELECT * FROM experiments", engine)
-df.to_sql('new_table', engine, if_exists='replace', index=False)
+def get_user(user_id):
+    conn = connection_pool.getconn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+            return cur.fetchone()
+    finally:
+        connection_pool.putconn(conn)  # always return connection to pool
 ```
 
 ---
 
-## 19. PostgreSQL for ML / DL / GenAI / Agentic AI — Real-World Patterns
-
-### 19.1 Experiment Tracking Database
-
-```sql
-CREATE TABLE experiments (
-    exp_id        UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    project       TEXT NOT NULL,
-    run_name      TEXT,
-    model_arch    TEXT,
-    hyperparams   JSONB NOT NULL DEFAULT '{}',
-    metrics       JSONB DEFAULT '{}',
-    tags          TEXT[] DEFAULT '{}',
-    git_commit    CHAR(40),
-    status        TEXT DEFAULT 'running' CHECK (status IN ('running','done','failed')),
-    started_at    TIMESTAMPTZ DEFAULT NOW(),
-    finished_at   TIMESTAMPTZ,
-    duration_secs REAL GENERATED ALWAYS AS (
-                      EXTRACT(EPOCH FROM (finished_at - started_at))
-                  ) STORED
-);
-
--- Log metrics per step (loss curves)
-CREATE TABLE metric_logs (
-    log_id   BIGSERIAL PRIMARY KEY,
-    exp_id   UUID REFERENCES experiments(exp_id) ON DELETE CASCADE,
-    step     INTEGER NOT NULL,
-    metric   TEXT NOT NULL,
-    value    DOUBLE PRECISION NOT NULL,
-    logged_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX ON metric_logs (exp_id, metric, step);
-```
+### ⚠️ SQL Injection — Always Use Parameterized Queries
 
 ```python
-# Log metrics from training loop
-def log_metric(exp_id, step, metric_name, value):
-    cursor.execute("""
-        INSERT INTO metric_logs (exp_id, step, metric, value)
-        VALUES (%s, %s, %s, %s)
-    """, (exp_id, step, metric_name, value))
-    conn.commit()
+# ❌ NEVER do this — vulnerable to SQL injection
+user_input = "1; DROP TABLE users; --"
+cursor.execute(f"SELECT * FROM users WHERE id = {user_input}")  # DANGEROUS
 
-# Call in training loop
-for epoch, loss, acc in training_results:
-    log_metric(exp_id, epoch, 'train_loss', loss)
-    log_metric(exp_id, epoch, 'val_accuracy', acc)
+# ✅ ALWAYS use parameterized queries with %s
+cursor.execute("SELECT * FROM users WHERE id = %s", (user_input,))
+# psycopg2 safely escapes the input — no injection possible
 ```
 
 ---
 
-### 19.2 GenAI Chat History Storage
+## 19. PostgreSQL for ML / DL / GenAI / Agentic AI
 
-```sql
-CREATE TABLE sessions (
-    session_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id      UUID,
-    model        TEXT DEFAULT 'claude-3-5-sonnet',
-    system_prompt TEXT,
-    metadata     JSONB DEFAULT '{}',
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    last_active  TIMESTAMPTZ DEFAULT NOW()
-);
+### What & Why
 
-CREATE TABLE messages (
-    msg_id       BIGSERIAL PRIMARY KEY,
-    session_id   UUID REFERENCES sessions(session_id) ON DELETE CASCADE,
-    role         TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
-    content      TEXT NOT NULL,
-    tool_calls   JSONB,           -- for function/tool call results
-    input_tokens  INTEGER,
-    output_tokens INTEGER,
-    latency_ms   INTEGER,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_messages_session ON messages(session_id, created_at);
-```
-
-```python
-def save_message(session_id, role, content, input_tokens=None, output_tokens=None):
-    cursor.execute("""
-        INSERT INTO messages (session_id, role, content, input_tokens, output_tokens)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING msg_id
-    """, (session_id, role, content, input_tokens, output_tokens))
-    conn.commit()
-
-def get_conversation(session_id, last_n=20):
-    cursor.execute("""
-        SELECT role, content FROM messages
-        WHERE session_id = %s
-        ORDER BY created_at DESC
-        LIMIT %s
-    """, (session_id, last_n))
-    return list(reversed(cursor.fetchall()))
-```
+PostgreSQL is not just a database — it's a **central nervous system** for modern AI systems. Here's how it's used in real production AI architectures.
 
 ---
 
-### 19.3 Vector Embeddings with pgvector
-
-```bash
-# Install pgvector extension
-CREATE EXTENSION IF NOT EXISTS vector;
-```
+### Pattern 1: Feature Store (ML Training Data)
 
 ```sql
-CREATE TABLE documents (
-    doc_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    title       TEXT,
-    content     TEXT NOT NULL,
-    source_url  TEXT,
-    embedding   VECTOR(1536),       -- OpenAI text-embedding-3-small
-    metadata    JSONB DEFAULT '{}',
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Create HNSW index for fast approximate nearest neighbor search
-CREATE INDEX ON documents USING hnsw (embedding vector_cosine_ops)
-WITH (m = 16, ef_construction = 64);
-```
-
-```python
-import openai
-
-def embed_text(text: str) -> list[float]:
-    response = openai.embeddings.create(
-        model="text-embedding-3-small",
-        input=text
-    )
-    return response.data[0].embedding
-
-def store_document(title, content, url):
-    embedding = embed_text(content)
-    cursor.execute("""
-        INSERT INTO documents (title, content, source_url, embedding)
-        VALUES (%s, %s, %s, %s)
-    """, (title, content, url, embedding))
-    conn.commit()
-
-def semantic_search(query: str, top_k: int = 5):
-    query_embedding = embed_text(query)
-    cursor.execute("""
-        SELECT doc_id, title, content,
-               1 - (embedding <=> %s::vector) AS similarity
-        FROM documents
-        ORDER BY embedding <=> %s::vector
-        LIMIT %s
-    """, (query_embedding, query_embedding, top_k))
-    return cursor.fetchall()
-```
-
-> **RAG (Retrieval Augmented Generation) pattern:** Store docs as embeddings in PostgreSQL → retrieve top-k similar chunks → inject into LLM prompt.
-
----
-
-### 19.4 Agentic AI — Tool Call & Memory Storage
-
-```sql
--- Agent runs
-CREATE TABLE agent_runs (
-    run_id       UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    agent_name   TEXT NOT NULL,
-    user_goal    TEXT NOT NULL,
-    status       TEXT DEFAULT 'running' CHECK (status IN ('running','success','failed','cancelled')),
-    context      JSONB DEFAULT '{}',
-    started_at   TIMESTAMPTZ DEFAULT NOW(),
-    finished_at  TIMESTAMPTZ,
-    total_steps  INTEGER DEFAULT 0,
-    total_tokens INTEGER DEFAULT 0
-);
-
--- Individual agent steps / tool calls
-CREATE TABLE agent_steps (
-    step_id     BIGSERIAL PRIMARY KEY,
-    run_id      UUID REFERENCES agent_runs(run_id) ON DELETE CASCADE,
-    step_num    INTEGER NOT NULL,
-    step_type   TEXT CHECK (step_type IN ('think','tool_call','tool_result','respond')),
-    tool_name   TEXT,
-    tool_input  JSONB,
-    tool_output JSONB,
-    reasoning   TEXT,
-    tokens_used INTEGER,
-    duration_ms INTEGER,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Long-term agent memory
-CREATE TABLE agent_memory (
-    mem_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    agent_name  TEXT NOT NULL,
-    user_id     UUID,
-    memory_key  TEXT NOT NULL,
-    memory_val  TEXT NOT NULL,
-    embedding   VECTOR(1536),
-    importance  REAL DEFAULT 0.5 CHECK (importance BETWEEN 0 AND 1),
-    access_count INTEGER DEFAULT 0,
-    last_accessed TIMESTAMPTZ DEFAULT NOW(),
-    expires_at  TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (agent_name, user_id, memory_key)
-);
-```
-
-```python
-def log_tool_call(run_id, step_num, tool_name, tool_input, tool_output, duration_ms):
-    cursor.execute("""
-        INSERT INTO agent_steps
-            (run_id, step_num, step_type, tool_name, tool_input, tool_output, duration_ms)
-        VALUES (%s, %s, 'tool_call', %s, %s, %s, %s)
-    """, (run_id, step_num, tool_name,
-          Json(tool_input), Json(tool_output), duration_ms))
-    conn.commit()
-
-def upsert_memory(agent_name, user_id, key, value):
-    embedding = embed_text(value)
-    cursor.execute("""
-        INSERT INTO agent_memory (agent_name, user_id, memory_key, memory_val, embedding)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (agent_name, user_id, memory_key)
-        DO UPDATE SET
-            memory_val   = EXCLUDED.memory_val,
-            embedding    = EXCLUDED.embedding,
-            last_accessed = NOW(),
-            access_count  = agent_memory.access_count + 1
-    """, (agent_name, user_id, key, value, embedding))
-    conn.commit()
-```
-
----
-
-### 19.5 Feature Store (ML Features)
-
-```sql
+-- Store preprocessed features for ML training
 CREATE TABLE feature_store (
-    entity_id   TEXT NOT NULL,
-    entity_type TEXT NOT NULL,
-    feature     TEXT NOT NULL,
-    value       DOUBLE PRECISION,
-    value_str   TEXT,
-    value_json  JSONB,
-    computed_at TIMESTAMPTZ DEFAULT NOW(),
-    valid_from  TIMESTAMPTZ DEFAULT NOW(),
-    valid_to    TIMESTAMPTZ DEFAULT 'infinity',
-    PRIMARY KEY (entity_id, entity_type, feature, valid_from)
+    entity_id       BIGINT NOT NULL,
+    entity_type     VARCHAR(50) NOT NULL,    -- 'user', 'product', 'session'
+    feature_name    VARCHAR(100) NOT NULL,
+    feature_value   DOUBLE PRECISION,
+    computed_at     TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (entity_id, entity_type, feature_name)
 );
 
--- Latest value view
-CREATE VIEW current_features AS
-SELECT DISTINCT ON (entity_id, entity_type, feature)
-    entity_id, entity_type, feature, value, value_str, value_json, computed_at
+-- Pivot features for model input
+SELECT
+    entity_id,
+    MAX(CASE WHEN feature_name = 'avg_session_duration' THEN feature_value END) AS avg_session_duration,
+    MAX(CASE WHEN feature_name = 'purchase_count_30d'   THEN feature_value END) AS purchase_count_30d,
+    MAX(CASE WHEN feature_name = 'churn_risk_score'     THEN feature_value END) AS churn_risk_score
 FROM feature_store
-ORDER BY entity_id, entity_type, feature, valid_from DESC;
-
--- Point-in-time lookup (prevents data leakage in training)
-CREATE OR REPLACE FUNCTION get_features_at(
-    p_entity_id TEXT,
-    p_as_of TIMESTAMPTZ
-) RETURNS TABLE (feature TEXT, value DOUBLE PRECISION) AS $$
-    SELECT DISTINCT ON (feature) feature, value
-    FROM feature_store
-    WHERE entity_id = p_entity_id
-      AND valid_from <= p_as_of
-    ORDER BY feature, valid_from DESC;
-$$ LANGUAGE SQL;
+WHERE entity_type = 'user'
+GROUP BY entity_id;
 ```
 
----
-
-### 19.6 Model Registry
+### Pattern 2: Experiment Tracking (MLflow-style)
 
 ```sql
-CREATE TABLE model_registry (
-    model_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    model_name    TEXT NOT NULL,
-    version       TEXT NOT NULL,
-    framework     TEXT,
-    task          TEXT,
-    metrics       JSONB DEFAULT '{}',
-    artifact_path TEXT,       -- s3://bucket/path or /mnt/models/...
-    is_champion   BOOLEAN DEFAULT FALSE,
-    promoted_at   TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (model_name, version)
+-- Already created above, but here's how you query it
+-- Find top 5 runs across all experiments
+SELECT 
+    e.name AS experiment,
+    r.run_id,
+    r.hyperparams->>'learning_rate' AS lr,
+    r.hyperparams->>'batch_size' AS batch_size,
+    (r.metrics->>'accuracy')::FLOAT AS accuracy,
+    (r.metrics->>'val_loss')::FLOAT AS val_loss,
+    r.end_time - r.start_time AS duration
+FROM runs r
+JOIN experiments e ON r.exp_id = e.exp_id
+WHERE r.status = 'completed'
+ORDER BY (r.metrics->>'accuracy')::FLOAT DESC
+LIMIT 5;
+```
+
+### Pattern 3: RAG (Retrieval-Augmented Generation) with pgvector
+
+```sql
+-- Full RAG system schema
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE knowledge_base (
+    chunk_id    SERIAL PRIMARY KEY,
+    source_url  TEXT,
+    chunk_text  TEXT NOT NULL,
+    metadata    JSONB,
+    embedding   vector(1536),    -- OpenAI ada-002 dimensions
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Champion/Challenger pattern
-CREATE VIEW champion_models AS
-SELECT * FROM model_registry
-WHERE is_champion = TRUE;
+-- Create HNSW index (faster, better recall than IVFFlat)
+CREATE INDEX idx_kb_embedding_hnsw ON knowledge_base
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
+-- Semantic search query (used in RAG retrieval step)
+CREATE OR REPLACE FUNCTION search_knowledge_base(
+    query_embedding vector(1536),
+    top_k INTEGER DEFAULT 5,
+    similarity_threshold FLOAT DEFAULT 0.7
+)
+RETURNS TABLE(chunk_text TEXT, similarity FLOAT, metadata JSONB) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        kb.chunk_text,
+        1 - (kb.embedding <=> query_embedding) AS similarity,
+        kb.metadata
+    FROM knowledge_base kb
+    WHERE 1 - (kb.embedding <=> query_embedding) > similarity_threshold
+    ORDER BY kb.embedding <=> query_embedding
+    LIMIT top_k;
+END;
+$$ LANGUAGE plpgsql;
 ```
 
-```python
-def promote_champion(model_name, version):
-    with conn:  # transaction
-        # Demote current champion
-        cursor.execute("""
-            UPDATE model_registry
-            SET is_champion = FALSE
-            WHERE model_name = %s AND is_champion = TRUE
-        """, (model_name,))
-        # Promote new champion
-        cursor.execute("""
-            UPDATE model_registry
-            SET is_champion = TRUE, promoted_at = NOW()
-            WHERE model_name = %s AND version = %s
-        """, (model_name, version))
-```
-
----
-
-### 19.7 Useful SQL Patterns for ML Engineers
+### Pattern 4: Agentic AI — Tool Call Logging & Memory
 
 ```sql
--- Training/validation split by hash (reproducible, no leakage)
-SELECT *,
-    CASE
-        WHEN MOD(ABS(hashtext(id::TEXT)), 10) < 8 THEN 'train'
-        WHEN MOD(ABS(hashtext(id::TEXT)), 10) < 9 THEN 'val'
-        ELSE 'test'
-    END AS split
-FROM dataset_rows;
+-- Store agent conversation history
+CREATE TABLE agent_sessions (
+    session_id  UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(user_id),
+    agent_type  VARCHAR(100),
+    started_at  TIMESTAMPTZ DEFAULT NOW(),
+    metadata    JSONB
+);
 
--- Rolling average of loss (window function)
-SELECT
-    step,
-    loss,
-    AVG(loss) OVER (ORDER BY step ROWS BETWEEN 9 PRECEDING AND CURRENT ROW)
-        AS loss_rolling_avg_10
-FROM metric_logs
-WHERE exp_id = 'abc-123' AND metric = 'train_loss'
-ORDER BY step;
+CREATE TABLE agent_messages (
+    msg_id      BIGSERIAL PRIMARY KEY,
+    session_id  UUID REFERENCES agent_sessions(session_id) ON DELETE CASCADE,
+    role        VARCHAR(20) CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+    content     TEXT,
+    tool_name   VARCHAR(100),   -- which tool was called
+    tool_input  JSONB,          -- tool arguments
+    tool_output JSONB,          -- tool result
+    tokens_used INTEGER,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Compare two model runs side by side
-SELECT
-    a.exp_id   AS exp_a,
-    b.exp_id   AS exp_b,
-    a.accuracy AS acc_a,
-    b.accuracy AS acc_b,
-    b.accuracy - a.accuracy AS delta
-FROM experiments a
-JOIN experiments b ON a.model_type = b.model_type
-WHERE a.exp_id = 'exp-001' AND b.exp_id = 'exp-002';
+-- Agent memory table (persistent facts between sessions)
+CREATE TABLE agent_memory (
+    memory_id   SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(user_id),
+    memory_key  VARCHAR(200) NOT NULL,
+    memory_val  TEXT NOT NULL,
+    embedding   vector(1536),   -- embed the memory for semantic retrieval
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ,
+    UNIQUE (user_id, memory_key)
+);
 
--- Find best hyperparameter combination
+-- Retrieve relevant memories for an agent
+SELECT memory_key, memory_val,
+       1 - (embedding <=> $1::vector) AS relevance
+FROM agent_memory
+WHERE user_id = $2
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY embedding <=> $1::vector
+LIMIT 10;
+```
+
+### Pattern 5: LLM Output Logging & Evaluation
+
+```sql
+CREATE TABLE llm_calls (
+    call_id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    session_id      UUID,
+    model           VARCHAR(100) NOT NULL,  -- 'gpt-4o', 'claude-3-5-sonnet'
+    prompt_tokens   INTEGER,
+    completion_tokens INTEGER,
+    total_tokens    INTEGER,
+    latency_ms      INTEGER,
+    prompt_hash     TEXT,   -- SHA256 of prompt for dedup/caching
+    input_text      TEXT,
+    output_text     TEXT,
+    cost_usd        DECIMAL(10, 6),
+    called_at       TIMESTAMPTZ DEFAULT NOW(),
+    metadata        JSONB   -- extra: temperature, top_p, etc.
+);
+
+-- LLM cost dashboard query
 SELECT
-    hyperparams->>'lr'         AS learning_rate,
-    hyperparams->>'batch_size' AS batch_size,
-    AVG(accuracy)              AS avg_accuracy,
-    STDDEV(accuracy)           AS std_accuracy,
-    COUNT(*)                   AS num_runs
-FROM experiments
-WHERE status = 'completed'
-GROUP BY hyperparams->>'lr', hyperparams->>'batch_size'
-ORDER BY avg_accuracy DESC;
+    DATE_TRUNC('day', called_at) AS day,
+    model,
+    COUNT(*) AS total_calls,
+    SUM(total_tokens) AS total_tokens,
+    SUM(cost_usd) AS total_cost_usd,
+    AVG(latency_ms) AS avg_latency_ms
+FROM llm_calls
+WHERE called_at > NOW() - INTERVAL '30 days'
+GROUP BY DATE_TRUNC('day', called_at), model
+ORDER BY day DESC, model;
 ```
 
 ---
 
 ## 20. Job-Ready Cheat Sheet
 
-### DDL Quick Reference
+### Essential Commands Reference
 
 ```sql
--- Create
-CREATE TABLE t (id SERIAL PRIMARY KEY, name TEXT NOT NULL, val REAL DEFAULT 0.0);
-CREATE TABLE IF NOT EXISTS t (...);
-CREATE TABLE t2 AS SELECT * FROM t1 WHERE ...;
-CREATE VIEW v AS SELECT ...;
-CREATE MATERIALIZED VIEW mv AS SELECT ...; REFRESH MATERIALIZED VIEW mv;
+-- ════════════════════════════════════════
+--  DATABASE & TABLE MANAGEMENT
+-- ════════════════════════════════════════
+CREATE DATABASE mydb;
+DROP DATABASE mydb;
+\c mydb                          -- connect to db (psql)
+\dt                              -- list tables
+\d table_name                    -- describe table structure
+\di                              -- list indexes
 
--- Modify
-ALTER TABLE t ADD COLUMN col TEXT;
-ALTER TABLE t DROP COLUMN col;
-ALTER TABLE t RENAME COLUMN old TO new;
-ALTER TABLE t ALTER COLUMN col TYPE BIGINT USING col::BIGINT;
-ALTER TABLE t ALTER COLUMN col SET DEFAULT 0;
-ALTER TABLE t ALTER COLUMN col SET NOT NULL;
-ALTER TABLE t ADD CONSTRAINT name CHECK (condition);
-ALTER TABLE t DROP CONSTRAINT name;
-ALTER TABLE t RENAME TO new_name;
+-- ════════════════════════════════════════
+--  DATA RETRIEVAL
+-- ════════════════════════════════════════
+SELECT * FROM users;
+SELECT id, name FROM users WHERE age > 18;
+SELECT * FROM users ORDER BY name ASC LIMIT 10 OFFSET 20;
+SELECT DISTINCT city FROM users;
+SELECT COUNT(*), AVG(age), MIN(age), MAX(age) FROM users;
+SELECT city, COUNT(*) FROM users GROUP BY city HAVING COUNT(*) > 5;
 
--- Delete
-DROP TABLE IF EXISTS t CASCADE;
-DROP VIEW IF EXISTS v;
-TRUNCATE TABLE t RESTART IDENTITY;
+-- ════════════════════════════════════════
+--  JOINS
+-- ════════════════════════════════════════
+-- INNER JOIN — only matching rows from both tables
+SELECT u.name, o.total FROM users u
+INNER JOIN orders o ON u.user_id = o.user_id;
+
+-- LEFT JOIN — all rows from left, matching from right (NULL if no match)
+SELECT u.name, COUNT(o.order_id) FROM users u
+LEFT JOIN orders o ON u.user_id = o.user_id
+GROUP BY u.name;
+
+-- RIGHT JOIN — all rows from right, matching from left
+-- FULL OUTER JOIN — all rows from both tables
+
+-- ════════════════════════════════════════
+--  WINDOW FUNCTIONS
+-- ════════════════════════════════════════
+-- ROW_NUMBER, RANK, DENSE_RANK, LAG, LEAD, SUM OVER, AVG OVER
+
+SELECT 
+    user_id,
+    order_id,
+    total,
+    ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY total DESC) AS rank_by_user,
+    SUM(total) OVER (PARTITION BY user_id) AS user_lifetime_value,
+    LAG(total) OVER (PARTITION BY user_id ORDER BY ordered_at) AS prev_order_total
+FROM orders;
+
+-- ════════════════════════════════════════
+--  INDEXES (Critical for Performance)
+-- ════════════════════════════════════════
+CREATE INDEX idx_users_email ON users(email);
+CREATE UNIQUE INDEX idx_users_email_unique ON users(email);
+CREATE INDEX idx_orders_user ON orders(user_id);   -- FK columns should always be indexed
+CREATE INDEX idx_runs_metrics ON runs USING GIN(metrics);  -- JSONB index
+CREATE INDEX idx_docs_embedding ON documents USING hnsw(embedding vector_cosine_ops);
+
+DROP INDEX idx_users_email;
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'alice@example.com';
+
+-- ════════════════════════════════════════
+--  TRANSACTIONS
+-- ════════════════════════════════════════
+BEGIN;
+    UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+    UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;   -- make permanent
+-- or:
+ROLLBACK; -- undo everything
+
+SAVEPOINT my_savepoint;
+ROLLBACK TO SAVEPOINT my_savepoint;
+
+-- ════════════════════════════════════════
+--  COMMON FUNCTIONS
+-- ════════════════════════════════════════
+-- String
+LOWER(text), UPPER(text), TRIM(text), LENGTH(text)
+CONCAT(a, b), a || b              -- string concatenation
+SUBSTRING(text, start, length)
+REPLACE(text, from, to)
+REGEXP_REPLACE(text, pattern, replacement)
+SPLIT_PART(text, delimiter, n)
+
+-- Numeric
+ROUND(value, decimals), CEIL(value), FLOOR(value)
+ABS(value), MOD(a, b)
+RANDOM()                          -- random float 0-1
+
+-- Date/Time
+NOW(), CURRENT_DATE, CURRENT_TIMESTAMP
+DATE_TRUNC('month', timestamp)    -- truncate to month
+DATE_PART('year', timestamp)      -- extract part
+AGE(timestamp1, timestamp2)       -- interval between two dates
+TO_CHAR(timestamp, 'YYYY-MM-DD')  -- format date as string
+
+-- JSONB
+data->'key'                       -- returns JSONB
+data->>'key'                      -- returns TEXT
+data#>'{key1,key2}'               -- nested access
+data @> '{"key": "value"}'        -- containment check
+jsonb_array_elements(data->'arr') -- expand JSONB array to rows
 ```
-
-### DML Quick Reference
-
-```sql
--- Insert
-INSERT INTO t (col1, col2) VALUES (v1, v2);
-INSERT INTO t (col1, col2) VALUES (v1, v2) RETURNING id;
-INSERT INTO t (col1) VALUES (v1) ON CONFLICT (col1) DO UPDATE SET col1=EXCLUDED.col1;
-INSERT INTO t (col1) VALUES (v1) ON CONFLICT DO NOTHING;
-INSERT INTO t SELECT * FROM t2;
-
--- Update
-UPDATE t SET col1=v1, col2=v2 WHERE condition;
-UPDATE t SET col1=v1 WHERE id IN (SELECT id FROM t2 WHERE ...);
-UPDATE t SET col1=v1 RETURNING *;
-
--- Delete
-DELETE FROM t WHERE condition;
-DELETE FROM t WHERE id IN (...) RETURNING *;
-```
-
-### Conditional Expressions
-
-```sql
-CASE WHEN cond1 THEN r1 WHEN cond2 THEN r2 ELSE rn END
-COALESCE(a, b, c)                -- first non-null
-NULLIF(a, b)                     -- null if a=b, else a
-CAST(x AS type) / x::type
-GREATEST(a, b, c) / LEAST(a, b, c)
-```
-
-### Constraints
-
-```sql
-NOT NULL
-UNIQUE
-PRIMARY KEY                      -- NOT NULL + UNIQUE
-FOREIGN KEY (col) REFERENCES t(col) ON DELETE CASCADE
-CHECK (col > 0)
-DEFAULT value
-```
-
-### Python psycopg2 Template
-
-```python
-import psycopg2, os
-from psycopg2.extras import RealDictCursor, Json, execute_values
-
-conn = psycopg2.connect(os.environ['DATABASE_URL'])
-
-with conn:
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # SELECT
-        cur.execute("SELECT * FROM t WHERE val > %s", (threshold,))
-        rows = cur.fetchall()
-
-        # INSERT
-        cur.execute("INSERT INTO t (col) VALUES (%s) RETURNING id", (value,))
-        new_id = cur.fetchone()['id']
-
-        # BULK INSERT
-        execute_values(cur, "INSERT INTO t (a, b) VALUES %s", records)
-
-        # JSON
-        cur.execute("INSERT INTO t (data) VALUES (%s)", (Json({'key': 'val'}),))
-
-conn.close()
-```
-
-### pgvector Cheat Sheet
-
-```sql
--- Setup
-CREATE EXTENSION vector;
-
--- Column
-embedding VECTOR(1536)
-
--- Distance operators
-<=>   -- cosine distance (most common for text)
-<->   -- L2 (Euclidean) distance
-<#>   -- negative inner product
-
--- Index
-CREATE INDEX ON docs USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX ON docs USING ivfflat (embedding vector_l2_ops) WITH (lists=100);
-
--- Query
-SELECT id, 1-(embedding <=> '[...]'::vector) AS sim
-FROM docs ORDER BY embedding <=> '[...]'::vector LIMIT 10;
-```
-
-### Key Best Practices
-
-| Practice | Why |
-|----------|-----|
-| Always use parameterized queries (`%s`) | Prevent SQL injection |
-| Use `TIMESTAMPTZ` not `TIMESTAMP` | Timezone-aware; no bugs across servers |
-| Use `UUID` for distributed PKs | Globally unique, no collision |
-| Use `JSONB` not `JSON` | Indexable, faster, binary |
-| Use `COALESCE` before aggregating | Avoid NULL-ruined averages |
-| Use `ON CONFLICT DO UPDATE` for upserts | Idempotent data pipelines |
-| Use connection pooling in prod | Don't open/close per request |
-| Use `EXPLAIN ANALYZE` to debug slow queries | Find bottlenecks |
-| Use `MATERIALIZED VIEW` for heavy aggregations | Pre-compute, then refresh |
-| Use `TRANSACTION` for multi-step operations | All-or-nothing consistency |
 
 ---
 
-*Generated for ML / DL / GenAI / Agentic AI engineers — covers PostgreSQL topics 60–82 with production AI system patterns.*
+### Data Types Quick Reference
+
+| Category | Type | Example |
+|----------|------|---------|
+| Integer | `SERIAL`, `INTEGER`, `BIGINT` | `42`, `7000000000` |
+| Decimal | `DECIMAL(10,2)`, `DOUBLE PRECISION` | `3.14`, `0.001234` |
+| Text | `VARCHAR(n)`, `TEXT` | `'hello'`, large text |
+| Boolean | `BOOLEAN` | `TRUE`, `FALSE` |
+| Date/Time | `DATE`, `TIMESTAMPTZ` | `2024-01-15`, `2024-01-15 09:00+00` |
+| JSON | `JSONB` | `'{"key": "val"}'::JSONB` |
+| Array | `TEXT[]`, `INTEGER[]` | `ARRAY['a','b','c']` |
+| UUID | `UUID` | `gen_random_uuid()` |
+| Vector | `vector(n)` | `'[0.1, 0.2, 0.3]'::vector` |
+
+---
+
+### Constraints Quick Reference
+
+| Constraint | Purpose | Example |
+|------------|---------|---------|
+| `PRIMARY KEY` | Unique + Not Null identifier | `id SERIAL PRIMARY KEY` |
+| `NOT NULL` | Value required | `name TEXT NOT NULL` |
+| `UNIQUE` | No duplicates | `email VARCHAR UNIQUE` |
+| `FOREIGN KEY` | Referential integrity | `REFERENCES users(id)` |
+| `CHECK` | Custom rule | `CHECK (age >= 0)` |
+| `DEFAULT` | Auto-fill value | `DEFAULT NOW()` |
+
+---
+
+### The "AI Engineer" Toolkit in PostgreSQL
+
+| Need | PostgreSQL Solution |
+|------|-------------------|
+| Store ML metadata | `JSONB` columns |
+| Vector similarity search | `pgvector` extension |
+| Semantic caching | Vector + HNSW index |
+| Experiment tracking | Structured tables + JSONB |
+| RAG retrieval | `pgvector` + cosine distance |
+| Agent memory | Table + vector embeddings |
+| LLM cost tracking | `llm_calls` table |
+| Feature store | Time-partitioned tables |
+| Batch ML inference | `COPY` + `execute_values` |
+| Analytical dashboards | Materialized views |
+
+---
+
+### Top 10 Performance Best Practices
+
+1. **Always index foreign key columns** — PostgreSQL does NOT auto-index FKs
+2. **Use `TIMESTAMPTZ` not `TIMESTAMP`** — avoid timezone disasters
+3. **Use `JSONB` not `JSON`** — it's indexed, binary, and faster
+4. **Use connection pooling** — never open a new connection per query
+5. **Use `EXPLAIN ANALYZE`** — always check query plans for slow queries
+6. **Parameterize all queries** — prevents SQL injection AND enables plan caching
+7. **Use partial indexes** for filtered queries: `CREATE INDEX ON orders(status) WHERE status = 'pending'`
+8. **Batch inserts with `execute_values`** — 10-100x faster than row-by-row
+9. **Use `MATERIALIZED VIEW`** for heavy reports — refresh on schedule
+10. **Vacuum regularly** — `VACUUM ANALYZE table_name` keeps statistics fresh
+
+---
+
+*Built for ML / DL / GenAI / Agentic AI engineers. From beginner to job-ready.* 🐘
